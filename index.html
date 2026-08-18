@@ -531,27 +531,21 @@ html,body{width:100%!important;height:100%!important;overflow:hidden!important}
 </style>
 
 
-<style id="svMonitorFitFinal">
-/* SV GitHub 최종: 기능 로직은 V14.2 그대로, 모니터 폭 대응만 보강 */
-html,body{width:100%;min-width:0;overflow-x:hidden}
-.wrap{width:100%!important;max-width:none!important;margin:0!important}
-#svLivePanel,#svReplayPanel,#svSideReplayPanel{min-width:0!important}
-.controls{min-width:0!important}
-.controls button,.controls select{white-space:nowrap!important;flex:0 0 auto}
-@media (min-width:1280px){
-  .wrap{padding:4px!important}
-  .panel{margin:3px 0!important}
-}
-@media (max-width:1100px){
-  .controls{gap:3px!important}
-  .controls button,.controls select{font-size:11px!important;padding-left:7px!important;padding-right:7px!important}
+<style id="svGithubMonitorFitV143">
+/* V14.3 기능 유지 + 화면폭 대응만 보완 */
+html,body{width:100%;max-width:100%;overflow-x:hidden}
+body{margin:0}
+#app,.app,.wrap,.container{max-width:100%!important}
+button,select{white-space:nowrap}
+@media (max-width:1400px){
+  button,select{font-size:12px!important}
 }
 </style>
 
 </head>
 <body>
 <div class="wrap">
-<h1>SV · Pose Swing Test V14.2 THIN HEAD PATH</h1>
+<h1>SV · Pose Swing Test V14.3 A/B BRIDGE</h1>
 <div class="sub">V11.1B 감지부 고정 · 최근 스윙 반복 · 재생/정지 · 배속 · 프레임 이동</div>
 
 <div class="panel" id="svLivePanel">
@@ -1114,15 +1108,63 @@ $('arm').onclick=()=>{
 };
 
 
+let svAckTimer=null;
+let svPendingSlot='';
+
 function sendReplayToTUp(slot){
-  if(!latestReplayBlob){$('result').textContent='보낼 최근 스윙 영상이 없습니다.';return;}
+  if(!latestReplayBlob){
+    $('result').textContent='보낼 최근 스윙 영상이 없습니다.';
+    return;
+  }
+
   const target=(window.opener&&!window.opener.closed)?window.opener:null;
-  if(!target){$('result').textContent='티업 회원카드에서 SV 촬영을 열어야 전송됩니다.';return;}
+  if(!target){
+    $('result').textContent='회원카드의 [SV 촬영] 버튼으로 이 창을 열어주세요.';
+    return;
+  }
+
   try{
-    target.postMessage({type:'TUP_SV_VIDEO',slot:slot,blob:latestReplayBlob,rotation:90,createdAt:Date.now()},'*');
-    $('result').textContent='✓ '+slot+'화면 전송 완료';
-  }catch(e){$('result').textContent='전송 실패: '+e.message;}
+    svPendingSlot=slot;
+    $('result').textContent=slot+'화면 전송 중…';
+
+    const deg=(slot==='B'
+      ? (window.svSideRotation??90)
+      : (window.svFrontRotation??90));
+
+    target.postMessage({
+      type:'TUP_SV_VIDEO',
+      slot:slot,
+      blob:latestReplayBlob,
+      rotation:deg,
+      createdAt:Date.now(),
+      source:'SV'
+    },'*');
+
+    clearTimeout(svAckTimer);
+    svAckTimer=setTimeout(()=>{
+      if(svPendingSlot===slot){
+        $('result').textContent=slot+'화면 전송 요청 완료 · 회원카드 응답을 확인하세요.';
+      }
+    },2200);
+  }catch(e){
+    $('result').textContent='전송 실패: '+e.message;
+  }
 }
+
+window.addEventListener('message',(ev)=>{
+  const d=ev&&ev.data;
+  if(!d||d.type!=='TUP_SV_ACK')return;
+
+  clearTimeout(svAckTimer);
+  svPendingSlot='';
+
+  if(d.ok){
+    $('result').textContent='✓ '+d.slot+'화면 회원카드 연결 완료';
+  }else{
+    $('result').textContent=(d.slot||'')+'화면 전송 오류: '+(d.error||'알 수 없는 오류');
+  }
+});
+
 if($('sendA'))$('sendA').onclick=()=>sendReplayToTUp('A');
 if($('sendB'))$('sendB').onclick=()=>sendReplayToTUp('B');
 
