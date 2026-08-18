@@ -531,18 +531,23 @@ html,body{width:100%!important;height:100%!important;overflow:hidden!important}
 </style>
 
 
-<style id="svResponsiveFinal">
-/* SV: 모니터 크기가 달라도 영상은 비율 유지, 컨트롤은 찌그러지지 않게 */
-html,body{width:100%;max-width:100%;overflow-x:hidden!important;}
-.wrap{width:100%!important;max-width:none!important;min-width:0!important;}
-.panel{min-width:0!important;}
-#mainVideoStage,#sideVideoStage{max-width:100%!important;overflow:hidden!important;}
-.controls{display:flex!important;align-items:center!important;gap:6px!important;flex-wrap:wrap!important;}
-.controls button,.controls select{flex:0 0 auto!important;white-space:nowrap!important;}
-#frontRotateBtn,#sideRotateBtn{min-width:94px!important;width:auto!important;white-space:nowrap!important;}
-#frontReplayCanvas,#sideReplayCanvas,#frontJointCanvas,#sideJointCanvas,#frontHeadCanvas,#sideHeadCanvas{max-width:100%!important;}
-@media(max-width:1400px){.controls{gap:4px!important}.controls button,.controls select{font-size:12px!important;padding-left:8px!important;padding-right:8px!important;}}
+<style id="svMonitorFitFinal">
+/* SV GitHub 최종: 기능 로직은 V14.2 그대로, 모니터 폭 대응만 보강 */
+html,body{width:100%;min-width:0;overflow-x:hidden}
+.wrap{width:100%!important;max-width:none!important;margin:0!important}
+#svLivePanel,#svReplayPanel,#svSideReplayPanel{min-width:0!important}
+.controls{min-width:0!important}
+.controls button,.controls select{white-space:nowrap!important;flex:0 0 auto}
+@media (min-width:1280px){
+  .wrap{padding:4px!important}
+  .panel{margin:3px 0!important}
+}
+@media (max-width:1100px){
+  .controls{gap:3px!important}
+  .controls button,.controls select{font-size:11px!important;padding-left:7px!important;padding-right:7px!important}
+}
 </style>
+
 </head>
 <body>
 <div class="wrap">
