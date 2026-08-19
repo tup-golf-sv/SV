@@ -542,6 +542,155 @@ button,select{white-space:nowrap}
 }
 </style>
 
+
+<style id="svReadabilityFinal">
+/* =========================================================
+   SV 시인성 개선
+   - 영상/기능/자동촬영 로직은 그대로
+   - 글자와 버튼만 키움
+   ========================================================= */
+
+html,body{
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+
+/* 상단 카메라 제어 */
+.top-controls,
+.controls,
+.toolbar,
+.header-controls{
+  font-size:15px!important;
+}
+
+button,
+select{
+  font-size:15px!important;
+  min-height:34px!important;
+  padding:6px 11px!important;
+  line-height:1.15!important;
+  font-weight:700!important;
+}
+
+/* 상단/패널 제목 */
+#replayTitle,
+.replay-title,
+.panel-title,
+.live-title,
+.section-title{
+  font-size:16px!important;
+  font-weight:800!important;
+}
+
+/* CAM 상태 / 정면 표기 */
+.camera-label,
+.cam-label,
+.view-label,
+.status-label,
+#frontLabel,
+#camStatus{
+  font-size:14px!important;
+  font-weight:700!important;
+}
+
+/* 하단 리플레이 컨트롤 */
+.replay-controls button,
+.replay-controls select,
+#replayControls button,
+#replayControls select{
+  font-size:14px!important;
+  min-height:32px!important;
+  padding:5px 10px!important;
+}
+
+/* 하단 시간/상태 */
+.status,
+.status-text,
+.result,
+.hint,
+#status,
+#replayStatus,
+#result,
+#frontResult{
+  font-size:13px!important;
+  line-height:1.35!important;
+}
+
+/* 너무 작은 보조문구 */
+small,
+.small,
+.sub,
+.note{
+  font-size:12px!important;
+}
+
+/* 1920급 이상에서는 조금 더 크게 */
+@media (min-width:1800px){
+  button,
+  select{
+    font-size:16px!important;
+    min-height:36px!important;
+  }
+
+  #replayTitle,
+  .replay-title,
+  .panel-title,
+  .live-title,
+  .section-title{
+    font-size:17px!important;
+  }
+
+  .replay-controls button,
+  .replay-controls select,
+  #replayControls button,
+  #replayControls select{
+    font-size:15px!important;
+    min-height:34px!important;
+  }
+
+  .status,
+  .status-text,
+  .result,
+  .hint,
+  #status,
+  #replayStatus,
+  #result,
+  #frontResult{
+    font-size:14px!important;
+  }
+}
+
+/* 1366급에서는 한 줄 유지 위해 살짝 절충 */
+@media (max-width:1366px){
+  button,
+  select{
+    font-size:13px!important;
+    min-height:31px!important;
+    padding:5px 8px!important;
+  }
+
+  .replay-controls button,
+  .replay-controls select,
+  #replayControls button,
+  #replayControls select{
+    font-size:12px!important;
+    min-height:30px!important;
+    padding:4px 7px!important;
+  }
+
+  .status,
+  .status-text,
+  .result,
+  .hint,
+  #status,
+  #replayStatus,
+  #result,
+  #frontResult{
+    font-size:12px!important;
+  }
+}
+</style>
+
 </head>
 <body>
 <div class="wrap">
