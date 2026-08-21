@@ -664,7 +664,7 @@ function getSVMemberId(){
 
 function openTSStandalone(){
   const memberId = getSVMemberId();
-  let url = TS_BASE_URL + "?page=ts";
+  let url = TS_BASE_URL + "?page=ts100";
   if(memberId){
     url += "&id=" + encodeURIComponent(memberId);
   }
