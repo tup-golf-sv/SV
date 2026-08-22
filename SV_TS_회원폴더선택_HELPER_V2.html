@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T-UP SV 회원영상 선택</title>
+<style>
+html,body{margin:0;background:#07110d;color:#fff;font-family:Arial,"Noto Sans KR",sans-serif}
+.wrap{padding:20px}
+h1{margin:0 0 10px;font-size:20px}
+p{margin:7px 0;color:#d9e7df;font-size:14px;line-height:1.5}
+button{width:100%;min-height:48px;margin-top:12px;border:0;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer}
+.primary{background:#0d6b49;color:#fff}
+.secondary{background:#e9eeeB;color:#183128}
+#msg{margin-top:10px;font-size:13px;color:#f3d36b}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">회원 영상 폴더 연결</h1>
+  <p id="desc">SV에서 기억한 저장폴더를 확인하고 있습니다.</p>
+  <button id="openBtn" class="primary" hidden>회원폴더 열기</button>
+  <button id="rootBtn" class="secondary" hidden>SV영상 폴더 다시 지정</button>
+  <div id="msg"></div>
+</div>
+<script>
+(function(){
+'use strict';
+
+const DB_NAME='TUP_SV_STORAGE';
+const DB_VERSION=1;
+const STORE='handles';
+const KEY='SV_VIDEO_ROOT';
+
+const p=new URLSearchParams(location.search);
+const member=String(p.get('member')||'').trim();
+const side=(p.get('side')==='B'?'B':'A');
+
+const title=document.getElementById('title');
+const desc=document.getElementById('desc');
+const openBtn=document.getElementById('openBtn');
+const rootBtn=document.getElementById('rootBtn');
+const msg=document.getElementById('msg');
+
+title.textContent=(member||'회원')+' · '+side+' 영상 선택';
+
+function safeName(v){
+  return String(v||'').trim()
+    .replace(/[\\/:*?"<>|]/g,'_')
+    .replace(/\s+/g,'_') || '미지정회원';
+}
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const r=indexedDB.open(DB_NAME,DB_VERSION);
+    r.onupgradeneeded=()=>{
+      if(!r.result.objectStoreNames.contains(STORE)){
+        r.result.createObjectStore(STORE);
+      }
+    };
+    r.onsuccess=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error);
+  });
+}
+
+async function loadRoot(){
+  try{
+    const db=await openDB();
+    return await new Promise(resolve=>{
+      const tx=db.transaction(STORE,'readonly');
+      const q=tx.objectStore(STORE).get(KEY);
+      q.onsuccess=()=>resolve(q.result||null);
+      q.onerror=()=>resolve(null);
+    });
+  }catch(e){return null;}
+}
+
+async function saveRoot(h){
+  const db=await openDB();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).put(h,KEY);
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+
+let root=null;
+let memberDir=null;
+
+async function prepare(){
+  root=await loadRoot();
+
+  if(!root){
+    desc.textContent='이 GitHub/SV origin에 저장된 SV영상 폴더 정보가 없습니다.';
+    rootBtn.hidden=false;
+    return false;
+  }
+
+  try{
+    let q=await root.queryPermission({mode:'read'});
+    if(q!=='granted'){
+      desc.textContent='SV영상 폴더 권한이 필요합니다.';
+      rootBtn.hidden=false;
+      return false;
+    }
+
+    memberDir=await root.getDirectoryHandle(safeName(member),{create:false});
+    desc.textContent='SV영상 → '+safeName(member)+' 폴더가 준비되었습니다.';
+    openBtn.hidden=false;
+    return true;
+  }catch(e){
+    desc.textContent='SV영상 안에 '+safeName(member)+' 회원폴더를 찾지 못했습니다.';
+    rootBtn.hidden=false;
+    return false;
+  }
+}
+
+async function pickMemberFile(){
+  if(!memberDir){
+    msg.textContent='회원폴더가 준비되지 않았습니다.';
+    return;
+  }
+
+  try{
+    /* showOpenFilePicker(startIn:DirectoryHandle) 대신
+       이미 권한이 있는 회원폴더 내부를 직접 읽는다. */
+    var files=[];
+    for await (const entry of memberDir.values()){
+      if(entry.kind!=='file')continue;
+      var name=String(entry.name||'');
+      if(!/\.(webm|mp4|mov|m4v|avi|png|jpg|jpeg|webp|bmp)$/i.test(name))continue;
+
+      try{
+        var f=await entry.getFile();
+        files.push({
+          handle:entry,
+          file:f,
+          name:name,
+          modified:Number(f.lastModified||0)
+        });
+      }catch(e){}
+    }
+
+    files.sort(function(a,b){return b.modified-a.modified;});
+
+    if(!files.length){
+      msg.textContent='이 회원폴더에 영상/이미지 파일이 없습니다.';
+      return;
+    }
+
+    /* 회원폴더 안의 파일만 표시 */
+    openBtn.hidden=true;
+    rootBtn.hidden=true;
+    desc.textContent=safeName(member)+' 회원폴더 · 파일을 선택하세요.';
+
+    var old=document.getElementById('memberFileList');
+    if(old)old.remove();
+
+    var list=document.createElement('div');
+    list.id='memberFileList';
+    list.style.marginTop='12px';
+    list.style.maxHeight='330px';
+    list.style.overflowY='auto';
+
+    files.forEach(function(item){
+      var b=document.createElement('button');
+      b.type='button';
+      b.className='secondary';
+      b.style.textAlign='left';
+      b.style.marginTop='7px';
+      b.style.minHeight='42px';
+      b.textContent=item.name;
+
+      b.onclick=async function(){
+        try{
+          var file=await item.handle.getFile();
+
+          if(window.opener && !window.opener.closed){
+            window.opener.postMessage({
+              type:'TUP_TS_MEMBER_PICKED_FILE',
+              side:side,
+              memberName:member,
+              fileName:file.name,
+              file:file
+            },'*');
+          }
+
+          msg.textContent='TS '+side+' 화면으로 전달했습니다.';
+          setTimeout(function(){window.close();},180);
+        }catch(e){
+          console.error(e);
+          msg.textContent='선택한 파일을 읽지 못했습니다.';
+        }
+      };
+
+      list.appendChild(b);
+    });
+
+    document.querySelector('.wrap').appendChild(list);
+    msg.textContent='총 '+files.length+'개 파일을 찾았습니다.';
+  }catch(e){
+    console.error(e);
+    msg.textContent='회원폴더의 파일 목록을 읽지 못했습니다.';
+  }
+}
+
+rootBtn.onclick=async function(){
+  try{
+    const h=await window.showDirectoryPicker({
+      id:'TUP_SV_VIDEO_ROOT',
+      mode:'readwrite',
+      startIn:'downloads'
+    });
+
+    root=h;
+    await saveRoot(h);
+    rootBtn.hidden=true;
+    msg.textContent='SV영상 폴더를 기억했습니다.';
+    await prepare();
+  }catch(e){
+    if(e && e.name!=='AbortError'){
+      console.error(e);
+      msg.textContent='SV영상 폴더를 지정하지 못했습니다.';
+    }
+  }
+};
+
+openBtn.onclick=pickMemberFile;
+
+prepare();
+
+})();
+</script>
+</body>
+</html>
