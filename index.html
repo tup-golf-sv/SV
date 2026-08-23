@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>티업골프아카데미 SV_0.1(BETA) V107 · UI BALANCE · TS CLEAN</title>
+<title>티업골프아카데미 SV_0.1(BETA) V107 · SENSOR V113 LINK</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial,"Noto Sans KR","Malgun Gothic",sans-serif}
 #viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
@@ -635,6 +635,29 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 #rotate90TextErase{z-index:129!important;background:#061008!important}
 /* Keep the actual A/B rotate hit zones above all cleanup masks. */
 #rotA,#rotB{z-index:133!important;pointer-events:auto!important}
+
+
+/* ===== SENSOR V113 LINK : minimal overlay on the existing sensor box ===== */
+#sensorModePanel{
+  position:absolute;left:246px;top:764px;width:152px;height:36px;z-index:31;
+  box-sizing:border-box;border:1px solid rgba(201,171,91,.55);border-radius:7px;
+  background:linear-gradient(180deg,rgba(10,25,18,.94),rgba(3,12,8,.96));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.035),0 3px 12px rgba(0,0,0,.35);
+  color:#e9efe9;font-size:8px;overflow:hidden
+}
+#sensorModePanel .sensorTop{height:17px;display:flex;align-items:center;gap:5px;padding:0 6px;white-space:nowrap}
+#sensorLamp{width:6px;height:6px;border-radius:50%;background:#7d8580;box-shadow:0 0 5px rgba(125,133,128,.5);flex:0 0 auto}
+#sensorLamp.on{background:#72f36a;box-shadow:0 0 7px rgba(114,243,106,.85)}
+#sensorLamp.ready{background:#f4d35e;box-shadow:0 0 8px rgba(244,211,94,.9)}
+#sensorStateText{overflow:hidden;text-overflow:ellipsis;font-weight:800;letter-spacing:-.15px}
+#sensorModes{height:18px;display:flex;align-items:center;justify-content:center;gap:3px;border-top:1px solid rgba(255,255,255,.07)}
+#sensorModes button{
+  appearance:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;background:rgba(255,255,255,.035);
+  color:#9ca9a0;font-size:7px;font-weight:900;line-height:12px;height:13px;padding:0 5px;cursor:pointer
+}
+#sensorModes button.active{color:#fff;border-color:rgba(216,183,91,.75);background:rgba(147,112,28,.35)}
+#sensorModes button:active{transform:translateY(1px)}
+#sensorBtn{pointer-events:none!important}
 
 </style>
 
@@ -1778,6 +1801,16 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button id="recentSavedA" type="button" onclick="playRecentSaved('A')" aria-label="A 최근 저장 영상 재생"></button>
   <button id="recentSavedB" type="button" onclick="playRecentSaved('B')" aria-label="B 최근 저장 영상 재생"></button>
 
+
+  <div id="sensorModePanel" aria-label="센서 감지 모드">
+    <div class="sensorTop"><span id="sensorLamp"></span><span id="sensorStateText">센서 연결 대기중</span></div>
+    <div id="sensorModes">
+      <button type="button" data-svmode="AUTO" class="active" onclick="setSVDetectMode('AUTO')">AUTO</button>
+      <button type="button" data-svmode="SENSOR" onclick="setSVDetectMode('SENSOR')">SENSOR</button>
+      <button type="button" data-svmode="POSE" onclick="setSVDetectMode('POSE')">POSE</button>
+    </div>
+  </div>
+
   <button id="sensorBtn" class="hit" onclick="toast('센서 미연결 · SIMULATION 유지')" aria-label="센서 연결 상태"></button>
 </div></div>
 
@@ -2305,7 +2338,7 @@ function ema(prev,cur,a=.42){return prev?{x:prev.x*(1-a)+cur.x*a,y:prev.y*(1-a)+
    4) SWING 후 0.18초 이상 + 큰 이동/속도면 SHOT 확정.
 */
 function detectSwing(l){
-  if(typeof BALL_SENSOR_CONNECTED!=='undefined' && BALL_SENSOR_CONNECTED)return;
+  if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
 
   const now=performance.now();
   const present=v54Presence(l);
@@ -2935,6 +2968,175 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 else bind();
 setTimeout(bind,300);
 })();
+</script>
+
+
+<script>
+/* ===== SV V107 + SENSOR BRIDGE V113 =====
+   Reads ONLY http://127.0.0.1:8765/status.
+   Does not open/launch any browser or alter the bridge.
+*/
+const SV113_STATUS_URL='http://127.0.0.1:8765/status';
+/* ChatGPT 미리보기에서는 로컬 브리지 상태 확인을 실행하지 않습니다.
+   실제 배포/로컬 실행에서는 기존 SENSOR BRIDGE 로직을 그대로 사용합니다. */
+const SV113_IS_PREVIEW=(()=>{
+  const host=String(location.hostname||'').toLowerCase();
+  const referrer=String(document.referrer||'').toLowerCase();
+  return host==='chatgpt.com' || host.endsWith('.chatgpt.com') ||
+    referrer.includes('chatgpt.com');
+})();
+let SV_DETECT_MODE=localStorage.getItem('SV_DETECT_MODE')||'AUTO';
+let BALL_SENSOR_CONNECTED=false;
+let SV113_LAST_READY_SEQ=-1;
+let SV113_LAST_SHOT_SEQ=-1;
+let SV113_POLL_BUSY=false;
+let SV113_RECORDING=false;
+let SV113_STOP_TIMER=null;
+let SV113_EST_SEQ=0;
+
+function shouldUseSensorDetection(){
+  return SV_DETECT_MODE==='SENSOR' || (SV_DETECT_MODE==='AUTO' && BALL_SENSOR_CONNECTED);
+}
+function shouldUsePoseDetection(){
+  return SV_DETECT_MODE==='POSE' || (SV_DETECT_MODE==='AUTO' && !BALL_SENSOR_CONNECTED);
+}
+function setSVDetectMode(mode){
+  if(!['AUTO','SENSOR','POSE'].includes(mode))return;
+  SV_DETECT_MODE=mode;
+  localStorage.setItem('SV_DETECT_MODE',mode);
+  document.querySelectorAll('#sensorModes button').forEach(b=>b.classList.toggle('active',b.dataset.svmode===mode));
+  updateSV113StatusUI();
+  try{toast('감지모드 · '+mode)}catch(e){}
+}
+function updateSV113StatusUI(ready=false){
+  const lamp=document.getElementById('sensorLamp');
+  const txt=document.getElementById('sensorStateText');
+  if(!lamp||!txt)return;
+  lamp.classList.toggle('on',BALL_SENSOR_CONNECTED&&!ready);
+  lamp.classList.toggle('ready',BALL_SENSOR_CONNECTED&&ready);
+  if(SV_DETECT_MODE==='POSE'){
+    txt.textContent='POSE 감지';
+  }else if(!BALL_SENSOR_CONNECTED){
+    txt.textContent=SV_DETECT_MODE==='SENSOR'?'센서 연결 대기중':'AUTO · POSE';
+  }else if(ready){
+    txt.textContent='BALL READY';
+  }else{
+    txt.textContent=SV_DETECT_MODE==='AUTO'?'AUTO · SENSOR':'센서 연결됨';
+  }
+}
+function sv113StartSide(side){
+  const s=window.state&&state[side];
+  if(!s||!s.stream)return false;
+  try{
+    if(s.recorder&&s.recorder.state==='recording')return true;
+    s.poseCapture=true;       // disables the legacy 6-second stop timer
+    s.poseAutoReplay=false;
+    startClip(side);
+    return !!(s.recorder&&s.recorder.state==='recording');
+  }catch(e){
+    try{s.poseCapture=false}catch(_){}
+    return false;
+  }
+}
+function sv113Ready(data){
+  if(!shouldUseSensorDetection())return;
+  updateSV113StatusUI(true);
+  try{setPoseHeaderState('SENSOR · BALL READY')}catch(e){}
+  try{showReadyCenter(true)}catch(e){}
+  try{playReadyBeep()}catch(e){}
+  const a=sv113StartSide('A');
+  const b=sv113StartSide('B');
+  SV113_RECORDING=a||b;
+}
+function sv113FinishSide(side){
+  const s=window.state&&state[side];
+  if(!s)return;
+  try{
+    s.poseAutoReplay=true;
+    if(s.recorder&&s.recorder.state==='recording'){
+      s.recorder.stop();
+      const st=document.getElementById('camState'+side);
+      if(st)st.textContent='리플레이 준비';
+    }else{
+      s.poseAutoReplay=false;
+      s.poseCapture=false;
+    }
+  }catch(e){
+    s.poseAutoReplay=false;s.poseCapture=false;
+  }
+}
+function sv113EstimatedDistance(data){
+  // V113 is a trigger sensor, not a precision launch monitor.
+  // Produce a restrained coaching-display estimate; never label it measured.
+  const pattern=[0,7,-5,11,-9,4,-2,8];
+  const d=pattern[(SV113_EST_SEQ++)%pattern.length];
+  const total=Math.max(90,205+d);
+  const carry=Math.max(75,total-(14+Math.abs(d)%6));
+  return {carry, total, estimated:true, source:'SENSOR-V113', timestamp:Date.now()};
+}
+function sv113Shot(data){
+  if(!shouldUseSensorDetection())return;
+  try{showReadyCenter(false)}catch(e){}
+  try{setPoseHeaderState('SENSOR · SHOT')}catch(e){}
+  updateSV113StatusUI(false);
+
+  // Ball-flight presentation immediately on the sensor SHOT edge.
+  try{if(typeof addSimulation==='function')addSimulation()}catch(e){}
+  const estimate=sv113EstimatedDistance(data||{});
+  try{if(typeof receiveSV96Shot==='function')receiveSV96Shot(estimate)}catch(e){}
+
+  if(SV113_STOP_TIMER)clearTimeout(SV113_STOP_TIMER);
+  SV113_STOP_TIMER=setTimeout(()=>{
+    sv113FinishSide('A');
+    sv113FinishSide('B');
+    SV113_RECORDING=false;
+  },2300);
+}
+async function pollSV113(){
+  if(SV113_IS_PREVIEW)return;
+  if(SV113_POLL_BUSY)return;
+  SV113_POLL_BUSY=true;
+  try{
+    const r=await fetch(SV113_STATUS_URL+'?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    BALL_SENSOR_CONNECTED=!!(d.bridge&&d.connected);
+
+    const readySeq=Number(d.readySeq||0);
+    const shotSeq=Number(d.shotSeq||0);
+
+    // Baseline on first successful poll so an old shot is never replayed.
+    if(SV113_LAST_READY_SEQ<0)SV113_LAST_READY_SEQ=readySeq;
+    if(SV113_LAST_SHOT_SEQ<0)SV113_LAST_SHOT_SEQ=shotSeq;
+
+    if(readySeq>SV113_LAST_READY_SEQ){
+      SV113_LAST_READY_SEQ=readySeq;
+      sv113Ready(d);
+    }else{
+      updateSV113StatusUI(!!d.ready);
+    }
+
+    if(shotSeq>SV113_LAST_SHOT_SEQ){
+      SV113_LAST_SHOT_SEQ=shotSeq;
+      sv113Shot(d);
+    }
+  }catch(e){
+    BALL_SENSOR_CONNECTED=false;
+    updateSV113StatusUI(false);
+  }finally{
+    SV113_POLL_BUSY=false;
+  }
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  setSVDetectMode(SV_DETECT_MODE);
+  if(SV113_IS_PREVIEW){
+    BALL_SENSOR_CONNECTED=false;
+    updateSV113StatusUI(false);
+    return;
+  }
+  pollSV113();
+  setInterval(pollSV113,100);
+});
 </script>
 
 </body>
