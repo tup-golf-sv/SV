@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>티업골프아카데미 SV_0.1(BETA) V107 · SENSOR V113 LINK</title>
+<!-- R8_AB_A_ENGINE_CLONE_FIX: A replay engine preserved; B uses the same replay engine; B-only EOF/HOLD override removed -->
+<title>티업골프아카데미 SV_0.1(BETA) V107 · SENSOR V113 LINK · AB INDEPENDENT · SENSOR AB SYNC REPLAY · R6 FRESH BLOB</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial,"Noto Sans KR","Malgun Gothic",sans-serif}
 #viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
@@ -643,17 +644,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
   box-sizing:border-box;border:1px solid rgba(201,171,91,.55);border-radius:7px;
   background:linear-gradient(180deg,rgba(10,25,18,.94),rgba(3,12,8,.96));
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.035),0 3px 12px rgba(0,0,0,.35);
-  color:#e9efe9;font-size:8px;overflow:hidden
+  color:#e9efe9;font-size:9.5px;overflow:hidden
 }
-#sensorModePanel .sensorTop{height:17px;display:flex;align-items:center;gap:5px;padding:0 6px;white-space:nowrap}
-#sensorLamp{width:6px;height:6px;border-radius:50%;background:#7d8580;box-shadow:0 0 5px rgba(125,133,128,.5);flex:0 0 auto}
-#sensorLamp.on{background:#72f36a;box-shadow:0 0 7px rgba(114,243,106,.85)}
-#sensorLamp.ready{background:#f4d35e;box-shadow:0 0 8px rgba(244,211,94,.9)}
-#sensorStateText{overflow:hidden;text-overflow:ellipsis;font-weight:800;letter-spacing:-.15px}
-#sensorModes{height:18px;display:flex;align-items:center;justify-content:center;gap:3px;border-top:1px solid rgba(255,255,255,.07)}
+#sensorModePanel .sensorTop{height:18px;display:flex;align-items:center;gap:6px;padding:0 6px;white-space:nowrap}
+#sensorLamp{width:10px;height:10px;border-radius:50%;background:#7d8580;box-shadow:0 0 7px rgba(125,133,128,.65);flex:0 0 auto}
+#sensorLamp.on{background:#72f36a;box-shadow:0 0 11px rgba(114,243,106,.98)}
+#sensorLamp.ready{background:#f4d35e;box-shadow:0 0 12px rgba(244,211,94,1)}
+#sensorStateText{overflow:hidden;text-overflow:ellipsis;font-weight:900;letter-spacing:-.2px;text-shadow:0 0 5px rgba(114,243,106,.16)}
+#sensorModes{height:17px;display:flex;align-items:center;justify-content:center;gap:3px;border-top:1px solid rgba(255,255,255,.07)}
 #sensorModes button{
   appearance:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;background:rgba(255,255,255,.035);
-  color:#9ca9a0;font-size:7px;font-weight:900;line-height:12px;height:13px;padding:0 5px;cursor:pointer
+  color:#9ca9a0;font-size:7.6px;font-weight:900;line-height:12px;height:13px;padding:0 5px;cursor:pointer
 }
 #sensorModes button.active{color:#fff;border-color:rgba(216,183,91,.75);background:rgba(147,112,28,.35)}
 #sensorModes button:active{transform:translateY(1px)}
@@ -663,8 +664,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 
 <script>
 const state={
- A:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:90,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false},
- B:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:0,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false}
+ A:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:90,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false},
+ B:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:0,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false}
 };
 let masterVolume=.60,simTimer=null,simIndex=0;
 const REPLAY_VOLUME=0.30;
@@ -767,10 +768,7 @@ function getTrackDeviceId(side){
 }
 
 function isSingleCamABMode(){
-  if(state.A.stream && state.B.stream && state.A.stream===state.B.stream)return true;
-  const a=getTrackDeviceId('A'),b=getTrackDeviceId('B');
-  if(a&&b&&a===b)return true;
-  if(selectedDeviceA&&selectedDeviceB&&selectedDeviceA===selectedDeviceB)return true;
+  // A/B COMPLETE INDEPENDENT MODE: never couple the two camera channels.
   return false;
 }
 
@@ -918,46 +916,11 @@ async function listVideoDevices(){
 async function connectCam(side){
  try{
   if(!navigator.mediaDevices?.getUserMedia){toast('카메라 사용을 지원하지 않습니다.');return}
-  if(state[side].stream)disconnectCam(side);
+
+  // Only touch the requested side. The opposite side is never stopped, reused, mirrored or changed.
+  if(state[side].stream) disconnectCam(side);
+
   const deviceId=await getSelectedDeviceId(side);
-  const otherSide=side==='A'?'B':'A';
-  const devices=await listVideoDevices();
-  const sameRequested=!!(selectedDeviceA&&selectedDeviceB&&selectedDeviceA===selectedDeviceB);
-  const onePhysicalCam=devices.length===1;
-
-  if(state[otherSide]?.stream && (sameRequested||onePhysicalCam)){
-    // One physical camera: both LIVE panes must be identical from the first frame.
-    state[side].stream=state[otherSide].stream;
-    state.A.rotate=90;
-    state.B.rotate=90;
-    state.B.fitScale=state.A.fitScale;
-
-    const live=document.getElementById('live'+side);
-    live.srcObject=state[otherSide].stream;
-    live.style.display='block';
-
-    live.onloadedmetadata=async()=>{
-      syncABVisualFromA();
-      try{await live.play().catch(()=>{})}catch(e){}
-      if(side==='A'){
-        try{
-          if(!poseEnabled.A){
-            poseEnabled.A=true;
-            if(initPose('A'))poseLoop('A');
-          }
-          setPoseHeaderState('POSE · ADDRESS 확인중');
-        }catch(err){}
-      }
-    };
-
-    document.getElementById('replay'+side).style.display='none';
-    document.getElementById('mode'+side).textContent=side+' · LIVE';
-    document.getElementById('camState'+side).textContent='1CAM 공유';
-    syncABVisualFromA();
-    toast('A/B 1카메라 동기화 연결');
-    return;
-  }
-
   const video=deviceId?{
    deviceId:{exact:deviceId},
    width:{ideal:1920,min:1280},
@@ -970,22 +933,35 @@ async function connectCam(side){
    aspectRatio:{ideal:16/9},
    frameRate:{ideal:60}
   };
+
   let stream;
   try{stream=await navigator.mediaDevices.getUserMedia({video,audio:false})}
-  catch(e){stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false})}
-  state[side].stream=stream;
-  if((await listVideoDevices()).length===1){
-    state.A.rotate=90;
-    state.B.rotate=90;
+  catch(e){
+   // Do not silently fall back to another camera when a specific A/B device was selected.
+   if(deviceId) throw e;
+   stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
   }
+
+  state[side].stream=stream;
   const live=document.getElementById('live'+side);
-  live.srcObject=stream;live.style.display='block';
+  live.srcObject=stream;
+  live.style.display='block';
   live.onloadedmetadata=async()=>{
    fitFullBody(side);
-   if(side==='A'){
-    try{await live.play().catch(()=>{});await setJoint('A',true);setPoseHeaderState('POSE · ADDRESS 확인중')}catch(err){console.warn('A POSE AUTO START',err)}
-   }
+   try{await live.play().catch(()=>{})}catch(e){}
+   // R7: motion detection follows the connected camera count, not the joint-overlay switch.
+   // A only -> A detection, B only -> B detection, A+B -> both detection engines.
+   try{
+    if(typeof ensureMotionPose==='function')await ensureMotionPose(side);
+    if(side==='A'){
+      jointVisible.A=true;
+      const pc=document.getElementById('poseA'); if(pc)pc.style.display='block';
+      updateJointButtons('A',true);
+    }
+    setMotionSignal();
+   }catch(err){console.warn(side+' POSE AUTO START',err)}
   };
+
   document.getElementById('replay'+side).style.display='none';
   document.getElementById('mode'+side).textContent=side+' · LIVE';
   document.getElementById('camState'+side).textContent='연결됨';
@@ -993,35 +969,36 @@ async function connectCam(side){
   const tag=document.getElementById('deviceTag'+side);
   if(tag) tag.textContent=shortDeviceName(track?.label||'카메라',side);
   updateDeviceTags();
-  toast(side+' 카메라 연결');
- }catch(e){console.error(e);document.getElementById('camState'+side).textContent='연결 실패';toast(side+' 카메라 연결 실패')}
+  toast(side+' 카메라 독립 연결');
+ }catch(e){
+  console.error(e);
+  document.getElementById('camState'+side).textContent='연결 실패';
+  toast(side+' 카메라 연결 실패');
+ }
 }
 function disconnectCam(side){
  const s=state[side];
- const otherSide=side==='A'?'B':'A';
- const shared=!!(s.stream && state[otherSide]?.stream===s.stream);
  if(s.recorder&&s.recorder.state!=='inactive')try{s.recorder.stop()}catch(e){}
- if(s.stream && !shared)s.stream.getTracks().forEach(t=>t.stop());
+ if(s.stream)s.stream.getTracks().forEach(t=>t.stop());
  s.stream=null;
- document.getElementById('live'+side).srcObject=null;
- document.getElementById('camState'+side).textContent='대기'
+ poseEnabled[side]=false;
+ try{if(typeof vR8Motion!=='undefined'&&vR8Motion[side]){vR8Motion[side].running=false;vR8Motion[side].prev=null;vR8Motion[side].stableSince=0;vR8Motion[side].ready=false;}}catch(e){}
+ if(side==='B'){vR7B.prev=null;vR7B.prevAt=0;vR7B.stableSince=0;vR7B.ready=false;}
+ const live=document.getElementById('live'+side);
+ if(live)live.srcObject=null;
+ document.getElementById('camState'+side).textContent='대기';
+ setTimeout(()=>{try{setMotionSignal()}catch(e){}},0);
 }
 function rotate(side){
- if(isSingleCamABMode()){
-   const next=(state.A.rotate+90)%360;
-   state.A.rotate=next;
-   state.B.rotate=next;
-   syncABVisualFromA();
-   toast('A/B 화면 '+next+'°');
-   return;
- }
  state[side].rotate=(state[side].rotate+90)%360;
  v71ApplyLiveRotation(side);
  applyVideoFit(side);
- toast(side+' 화면 '+state[side].rotate+'°')
+ toast(side+' 화면 '+state[side].rotate+'°');
 }
 function startClip(side){
  const s=state[side];
+ // Sensor A/B synchronized-capture batch id. 0 means ordinary/manual/POSE capture.
+ const sensorBatchId=Number(s._sensorBatchId||0);
  const live=document.getElementById('live'+side);
  const replay=document.getElementById('replay'+side);
  const mode=document.getElementById('mode'+side);
@@ -1047,26 +1024,36 @@ function startClip(side){
  if(!window.MediaRecorder){toast('이 브라우저는 녹화를 지원하지 않습니다.');return}
  if(s.recorder&&s.recorder.state!=='inactive')return;
 
- s.chunks=[];
+ // Each MediaRecorder owns its own immutable chunk buffer.
+ // Do not rely on s.chunks here: a later READY can start a new recorder before
+ // the previous recorder's asynchronous onstop callback finishes (B cameras can
+ // finalize slightly later than A). That race could clear/replace B's chunks.
+ const recordingChunks=[];
+ s.chunks=recordingChunks;
  let mime='';
- for(const m of ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){
+ for(const m of ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){
    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
  }
- try{s.recorder=new MediaRecorder(s.stream,mime?{mimeType:mime}:undefined)}
- catch(e){s.recorder=new MediaRecorder(s.stream)}
+ let recorder;
+ try{recorder=new MediaRecorder(s.stream,mime?{mimeType:mime}:undefined)}
+ catch(e){recorder=new MediaRecorder(s.stream)}
+ s.recorder=recorder;
 
- s.recorder.ondataavailable=e=>{
-   if(e.data&&e.data.size)s.chunks.push(e.data)
+ recorder.ondataavailable=e=>{
+   if(e.data&&e.data.size)recordingChunks.push(e.data)
  };
 
- s.recorder.onstop=()=>{
-   if(!s.chunks.length){
+ recorder.onstop=()=>{
+   if(!recordingChunks.length){
      s.poseAutoReplay=false;
      s.poseCapture=false;
+     if(sensorBatchId && typeof sv113ReplaySideFailed==='function'){
+       try{sv113ReplaySideFailed(side,sensorBatchId)}catch(e){}
+     }
      return;
    }
 
-   const newBlob=new Blob(s.chunks,{type:s.recorder.mimeType||'video/webm'});
+   const newBlob=new Blob(recordingChunks,{type:recorder.mimeType||'video/webm'});
    const newUrl=URL.createObjectURL(newBlob);
    const oldUrl=s.url;
 
@@ -1093,6 +1080,16 @@ function startClip(side){
    r.src=newUrl;
    r.volume=REPLAY_VOLUME;
    r.onloadedmetadata=()=>applyVideoFit(side);
+
+   // SENSOR mode: A/B are independent cameras, but one sensor event is one shared shot.
+   // Do NOT reveal either replay early. Wait until both camera blobs are finalized,
+   // then enter replay and press play for both on the same animation frame.
+   if(sensorBatchId && typeof sv113ReplaySideReady==='function'){
+     try{
+       sv113ReplaySideReady(side,newBlob,newUrl,oldUrl,sensorBatchId);
+       return;
+     }catch(e){console.warn('SENSOR A/B synchronized replay handoff',e)}
+   }
 
    if(wantReplay){
      const singleCamSync=isSingleCamABMode();
@@ -1123,7 +1120,7 @@ function startClip(side){
    }
  };
 
- s.recorder.start(200);
+ recorder.start(200);
  document.getElementById('camState'+side).textContent='촬영중';
 
  // Ordinary timed recording still stops at 6 seconds.
@@ -1249,6 +1246,7 @@ function showReplay(side,autoplay=false){
       if(camState)camState.textContent='리플레이';
       applyVideoFit(side);
       if(autoplay){
+        r.loop=true;
         r.currentTime=0;
         const p=r.play();
         if(p&&typeof p.catch==='function')p.catch(()=>{});
@@ -1279,6 +1277,7 @@ function showLive(side){
 }
 function playPause(side){
  const r=document.getElementById('replay'+side);
+ if(state[side])state[side].sensorReplayHold=false;
  if(!state[side].url){toast(side+' 리플레이가 없습니다.');return}
 
  // V105: A/B 개별 재생 버튼은 반드시 해당 영상만 제어한다.
@@ -1678,7 +1677,7 @@ function saveCamSetup(){
   localStorage.setItem('SV_CAM_B',b);
   closeCamSetup();
   updateDeviceTags();
-  toast(a&&b&&a===b?'1카메라 A/B 동기화 모드':'카메라 설정 저장');
+  toast('A/B 독립 카메라 설정 저장');
 }
 
 async function getSelectedDeviceId(side){
@@ -1819,6 +1818,119 @@ window.addEventListener('DOMContentLoaded',()=>{
 let readyAudioCtx=null;
 let poseEngines={A:null,B:null}, poseEnabled={A:false,B:false}, poseRunning={A:false,B:false};
 let jointVisible={A:true,B:false};
+// R7 A/B MOTION: B has an independent lightweight motion state; A keeps the proven V107 detector.
+let vR7B={prev:null,prevAt:0,stableSince:0,ready:false,lastSwingAt:0};
+let vR7LastMotionSide='', vR7LastMotionAt=0;
+function vR7ConnectedSides(){return ['A','B'].filter(x=>!!(state&&state[x]&&state[x].stream))}
+function setMotionSignal(text){
+  if(text){setPoseHeaderState(text);return}
+  const sides=vR7ConnectedSides();
+  if(sides.length===2)setPoseHeaderState('MOTION · A+B READY');
+  else if(sides.length===1)setPoseHeaderState('MOTION · '+sides[0]+' READY');
+  else setPoseHeaderState('MOTION · CAMERA WAIT');
+}
+async function ensureMotionPose(side){
+  if(!state?.[side]?.stream)return false;
+  // R8: frame-motion detector is the primary swing trigger. It works regardless of
+  // front/side view and does not require full-body POSE landmarks.
+  try{ ensureFrameMotionDetector(side); }catch(e){ console.warn('FRAME MOTION START',side,e); }
+  if(!poseEnabled[side])poseEnabled[side]=true;
+  if(!initPose(side))return true; // camera motion detection continues even if MediaPipe fails
+  resizePose(side);
+  poseLoop(side);
+  if(side==='A')v60EnsureMic().then(ok=>{v60AudioArmed=!!ok;});
+  return true;
+}
+
+// ===== R8 CAMERA-FRAME MOTION DETECTOR =====
+// Independent A/B detector. Designed for test conditions where both cameras may
+// point in the same direction, and for final front/side installation.
+const vR8Motion={
+  A:{running:false,prev:null,stableSince:0,ready:false,lastTrigger:0},
+  B:{running:false,prev:null,stableSince:0,ready:false,lastTrigger:0}
+};
+let vR8GlobalTriggerAt=0;
+const vR8MotionCanvas={A:document.createElement('canvas'),B:document.createElement('canvas')};
+
+function vR8FrameStats(side,video){
+  const c=vR8MotionCanvas[side];
+  const W=64,H=36;
+  if(c.width!==W)c.width=W;
+  if(c.height!==H)c.height=H;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(video,0,0,W,H);
+  const d=x.getImageData(0,0,W,H).data;
+  const g=new Uint8Array(W*H);
+  for(let i=0,j=0;i<d.length;i+=4,j++) g[j]=(d[i]*3+d[i+1]*6+d[i+2])/10;
+  return g;
+}
+
+function vR8Diff(prev,cur){
+  if(!prev||!cur||prev.length!==cur.length)return {mean:0,hot:0};
+  let sum=0,hot=0;
+  for(let i=0;i<cur.length;i++){
+    const z=Math.abs(cur[i]-prev[i]);
+    sum+=z;
+    if(z>=14)hot++;
+  }
+  return {mean:sum/cur.length,hot:hot/cur.length};
+}
+
+function vR8Trigger(side,now,metric){
+  const m=vR8Motion[side];
+  if(now-m.lastTrigger<1800 || now-vR8GlobalTriggerAt<900)return;
+  m.lastTrigger=now;
+  vR8GlobalTriggerAt=now;
+  m.ready=false;
+  m.stableSince=0;
+  vR7LastMotionSide=side;
+  vR7LastMotionAt=now;
+  setMotionSignal('MOTION · '+side+' DETECT');
+  // Recording already began at READY. Finish after follow-through and replay.
+  if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+}
+
+function ensureFrameMotionDetector(side){
+  const m=vR8Motion[side];
+  if(!m || m.running)return;
+  m.running=true;
+  const tick=()=>{
+    const st=state?.[side];
+    const v=document.getElementById('live'+side);
+    if(!st?.stream || !v){m.running=false;return;}
+    try{
+      if(v.readyState>=2 && v.videoWidth && v.videoHeight){
+        const cur=vR8FrameStats(side,v);
+        if(m.prev){
+          const q=vR8Diff(m.prev,cur);
+          const now=performance.now();
+          // Quiet camera -> READY. Thresholds tolerate normal webcam sensor noise.
+          const quiet=(q.mean<3.4 && q.hot<0.022);
+          // Golf swing-sized movement. Either broad motion or a strong local change triggers.
+          const swing=(q.mean>7.0 || q.hot>0.090);
+          if(!m.ready){
+            if(quiet){
+              if(!m.stableSince)m.stableSince=now;
+              if(now-m.stableSince>=650){
+                m.ready=true;
+                v54StartReplayRecord();
+                const sides=vR7ConnectedSides();
+                setMotionSignal(sides.length===2?'MOTION · A+B READY':'MOTION · '+side+' READY');
+              }
+            }else{
+              m.stableSince=0;
+            }
+          }else if(swing){
+            vR8Trigger(side,now,q);
+          }
+        }
+        m.prev=cur;
+      }
+    }catch(e){console.warn('FRAME MOTION',side,e)}
+    setTimeout(tick,70);
+  };
+  setTimeout(tick,120);
+}
 const poseInputFrames={
  A:document.createElement('canvas'),
  B:document.createElement('canvas')
@@ -2051,38 +2163,35 @@ function v54Presence(lm){
 }
 
 function v54StartReplayRecord(){
-  if(v54RecordStarted) return;
+  if(v54RecordStarted)return;
+  const sides=vR7ConnectedSides();
+  if(!sides.length)return;
   v54RecordStarted=true;
   try{
-    state.A.poseCapture=true;
-    if(typeof startClip==='function'){
-      const r=startClip('A');
-      if(r && typeof r.catch==='function') r.catch(()=>{});
-    }
+    // Reuse the proven synchronized A/B blob session. With one connected camera,
+    // expected.size is 1, so it naturally becomes a single-camera replay session.
+    const session=sv113NewABSession();
+    session.source='POSE';
+    sides.forEach(side=>{
+      const ok=sv113StartSide(side);
+      if(ok)session.expected.add(side);
+      else if(state[side])state[side]._sensorBatchId=0;
+    });
+    if(!session.expected.size){v54RecordStarted=false;return;}
+    setMotionSignal(session.expected.size===2?'MOTION · A+B RECORD':'MOTION · '+[...session.expected][0]+' RECORD');
   }catch(e){
-    state.A.poseCapture=false;
+    console.error('POSE A/B record start error',e);
     v54RecordStarted=false;
   }
 }
 
 function v54FinishReplayRecord(){
-  const s=state.A;
+  const session=SV113_AB_SESSION;
+  const sides=(session&&session.source==='POSE')?[...session.expected]:vR7ConnectedSides();
   try{
-    s.poseAutoReplay=true;
-    if(s.recorder && s.recorder.state==='recording'){
-      s.recorder.stop();
-      const st=document.getElementById('camStateA');
-      if(st)st.textContent='리플레이 준비';
-    }else if(s.url){
-      s.poseAutoReplay=false;
-      showReplay('A',true);
-    }else{
-      s.poseAutoReplay=false;
-    }
-  }catch(e){
-    s.poseAutoReplay=false;
-    console.error('POSE replay stop error',e);
-  }
+    sides.forEach(side=>sv113FinishSide(side));
+    setMotionSignal('REPLAY · '+(sides.length===2?'A+B READY':((sides[0]||'CAM')+' READY')));
+  }catch(e){console.error('POSE replay stop error',e)}
   v54RecordStarted=false;
 }
 
@@ -2273,7 +2382,9 @@ function drawPose(side,res){
    return;
  }
 
- if(side==='A')detectSwing(res.poseLandmarks);
+ // R7: both views can detect motion. One physical swing is de-duplicated by the shared replay/record lock.
+ if(side==='A')detectSwing(res.poseLandmarks,'A');
+ else if(side==='B')detectSwingB(res.poseLandmarks);
 
  if(!jointVisible[side])return;
 
@@ -2318,11 +2429,11 @@ async function setJoint(side,on){
    }
    v60EnsureMic().then(ok=>{v60AudioArmed=!!ok;});
  }else if(side==='B'){
-   if(on && state.B.stream && !poseEnabled.B){
+   // R7: joint drawing may be OFF while B motion detection remains ON.
+   if(state.B.stream && !poseEnabled.B){
      poseEnabled.B=true;
      if(initPose('B'))poseLoop('B');
    }
-   if(!on)poseEnabled.B=false;
  }
 
  toast(side+' 관절 보기 '+(on?'ON':'OFF'));
@@ -2337,7 +2448,50 @@ function ema(prev,cur,a=.42){return prev?{x:prev.x*(1-a)+cur.x*a,y:prev.y*(1-a)+
    3) READY 기준 손/팔이 몸통 크기의 0.18 이상 이동하거나 속도가 충분하면 SWING.
    4) SWING 후 0.18초 이상 + 큰 이동/속도면 SHOT 확정.
 */
-function detectSwing(l){
+function detectSwingB(l){
+  if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
+  const now=performance.now();
+  if(!v54Presence(l)){
+    vR7B.prev=null;vR7B.prevAt=0;vR7B.stableSince=0;vR7B.ready=false;
+    return;
+  }
+  const ids=[11,12,13,14,15,16,23,24];
+  const pts=ids.map(i=>l[i]).filter(Boolean);
+  if(pts.length<5)return;
+  const cur={x:pts.reduce((a,p)=>a+p.x,0)/pts.length,y:pts.reduce((a,p)=>a+p.y,0)/pts.length};
+  const hands=[l[15],l[16]].filter(Boolean);
+  const hand={x:hands.reduce((a,p)=>a+p.x,0)/(hands.length||1),y:hands.reduce((a,p)=>a+p.y,0)/(hands.length||1)};
+  const snap={c:cur,h:hand};
+  if(!vR7B.prev){vR7B.prev=snap;vR7B.prevAt=now;return;}
+  const dt=Math.max(.016,(now-vR7B.prevAt)/1000);
+  const bodyMove=Math.hypot(cur.x-vR7B.prev.c.x,cur.y-vR7B.prev.c.y)/dt;
+  const handMove=Math.hypot(hand.x-vR7B.prev.h.x,hand.y-vR7B.prev.h.y)/dt;
+  vR7B.prev=snap;vR7B.prevAt=now;
+
+  // Side view READY: golfer is present and substantially still for 0.75 s.
+  if(!vR7B.ready){
+    if(bodyMove<0.055 && handMove<0.11){
+      if(!vR7B.stableSince)vR7B.stableSince=now;
+      if(now-vR7B.stableSince>=750){
+        vR7B.ready=true;
+        v54StartReplayRecord();
+        if(!state.A?.stream)setMotionSignal('MOTION · B READY');
+      }
+    }else vR7B.stableSince=0;
+    return;
+  }
+
+  // Side view swing: hand acceleration is the main cue, body motion is supplemental.
+  if((handMove>0.22 || (handMove>0.15&&bodyMove>0.07)) && now-vR7B.lastSwingAt>1800){
+    vR7B.lastSwingAt=now;
+    vR7B.ready=false;vR7B.stableSince=0;
+    vR7LastMotionSide='B';vR7LastMotionAt=now;
+    setMotionSignal(state.A?.stream?'MOTION · B DETECT':'MOTION · B DETECT');
+    if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+  }
+}
+
+function detectSwing(l,side='A'){
   if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
 
   const now=performance.now();
@@ -2383,7 +2537,7 @@ function detectSwing(l){
         v53AddressLocked=true;
         shotPhase='READY';
         v53ReadyAt=now;
-        setPoseHeaderState('POSE · READY');
+        setMotionSignal(state.B?.stream?'MOTION · A+B READY':'MOTION · A READY');
         showReadyCenter(true);
 
         if(!v54ReadyPlayed){
@@ -2420,7 +2574,8 @@ function detectSwing(l){
       v61SwingPendingAt=now;
       v61ShotConfirmed=false;
       showReadyCenter(false);
-      setPoseHeaderState('POSE · SWING 감지');
+      vR7LastMotionSide='A';vR7LastMotionAt=now;
+      setMotionSignal(state.B?.stream?'MOTION · A DETECT':'MOTION · A DETECT');
 
       // V9 behavior: a valid POSE swing always produces a replay.
       // Ball audio is supplemental SHOT confirmation and must not block replay.
@@ -2682,53 +2837,179 @@ document.addEventListener('DOMContentLoaded',renderSV96ShotPanel);
 
 <script>
 /* ===== V104 A+B 0s SYNCHRONIZED REPLAY ===== */
+function svResolveReplaySource(side){
+  const st=(typeof state!=='undefined')?state[side]:null;
+  const replay=document.getElementById('replay'+side);
+  if(!st||!replay)return '';
+
+  // R6: Manual A+B replay must never trust an old/revoked blob URL.
+  // The authoritative source is the latest recorded Blob for each independent camera.
+  if(st.lastBlob){
+    try{
+      const freshUrl=URL.createObjectURL(st.lastBlob);
+      st._manualSyncUrl=freshUrl;
+      return freshUrl;
+    }catch(e){}
+  }
+
+  // Fallback only when no Blob exists (e.g. externally assigned replay source).
+  const sourceUrl=replay.currentSrc||replay.src||((typeof st.url==='string')?st.url:'')||'';
+  return sourceUrl;
+}
+
 async function playABFromZero(){
-  const a=document.getElementById('replayA');
-  const b=document.getElementById('replayB');
-  const sa=state&&state.A;
-  const sb=state&&state.B;
-  if(!a||!b||!sa||!sb||!sa.url||!sb.url){
-    try{toast('A/B 영상이 모두 있어야 동시재생됩니다.')}catch(e){}
+  const sides=['A','B'];
+  const items={};
+
+  for(const side of sides){
+    const st=(typeof state!=='undefined')?state[side]:null;
+    const replay=document.getElementById('replay'+side);
+    const live=document.getElementById('live'+side);
+    const mode=document.getElementById('mode'+side);
+    const camState=document.getElementById('camState'+side);
+    const sourceUrl=svResolveReplaySource(side);
+    if(!st||!replay||!sourceUrl){
+      try{toast(side+' 리플레이 원본이 없습니다. 먼저 해당 카메라 영상을 1회 촬영하세요.')}catch(e){}
+      return;
+    }
+    items[side]={st,replay,live,mode,camState,sourceUrl};
+  }
+
+  // R6: bind the fresh per-camera Blob URL as the current authoritative replay URL.
+  sides.forEach(side=>{
+    const st=items[side].st;
+    const fresh=items[side].sourceUrl;
+    if(st && fresh)st.url=fresh;
+  });
+
+  // Manual A+B replay owns both panes until playback is started.
+  // Prevent legacy LIVE paths/watchdogs from leaving B visible as LIVE.
+  sides.forEach(side=>{
+    const {st,replay,live,mode,camState,sourceUrl}=items[side];
+    st.sensorReplayHold=true;
+    st.poseCapture=false;
+    try{replay.pause()}catch(e){}
+    replay.onended=null;
+    replay.loop=true;
+    replay.preload='auto';
+    replay.volume=REPLAY_VOLUME;
+    replay.playbackRate=window.SV95PlaybackRate||1;
+
+    // Force a fresh binding to the latest clip on each side.
+    try{
+      replay.removeAttribute('src');
+      replay.src=sourceUrl;
+      replay.load();
+    }catch(e){}
+
+    // Force visual state immediately; do not wait for loadeddata to hide LIVE.
+    if(live){
+      live.style.setProperty('display','none','important');
+      live.style.visibility='hidden';
+      live.style.opacity='0';
+    }
+    replay.style.setProperty('display','block','important');
+    replay.style.visibility='visible';
+    replay.style.opacity='1';
+    if(mode)mode.textContent=side+' · REPLAY';
+    if(camState)camState.textContent='리플레이';
+    try{applyVideoFit(side)}catch(e){}
+    try{enableReplayControls(side,true)}catch(e){}
+  });
+
+  const waitReady=(side)=>new Promise(resolve=>{
+    const r=items[side].replay;
+    if(r.readyState>=2){resolve(true);return;}
+    let done=false;
+    const finish=(ok)=>{
+      if(done)return; done=true;
+      r.removeEventListener('loadeddata',onOk);
+      r.removeEventListener('canplay',onOk);
+      r.removeEventListener('error',onErr);
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const onOk=()=>finish(true);
+    const onErr=()=>finish(false);
+    r.addEventListener('loadeddata',onOk,{once:true});
+    r.addEventListener('canplay',onOk,{once:true});
+    r.addEventListener('error',onErr,{once:true});
+    const timer=setTimeout(()=>finish(r.readyState>=2),3000);
+  });
+
+  const readyResults=await Promise.all(sides.map(waitReady));
+  if(!readyResults.every(Boolean)){
+    sides.forEach(side=>{
+      const st=items[side].st;
+      if(st && st._manualSyncUrl){
+        // Keep URL alive for immediate retry; it is the latest actual Blob.
+        st.url=st._manualSyncUrl;
+      }
+    });
+    try{toast('A/B 영상 로딩 실패 · 각 카메라 영상을 다시 1회 촬영하세요.')}catch(e){}
     return;
   }
 
-  try{a.pause()}catch(e){}
-  try{b.pause()}catch(e){}
-
-  // Make sure both replay layers are visible without starting either clip.
-  try{showReplay('A',false)}catch(e){}
-  try{showReplay('B',false)}catch(e){}
-
-  const seekZero=(v)=>new Promise((resolve)=>{
-    let done=false;
-    const finish=()=>{if(done)return;done=true;cleanup();resolve()};
-    const cleanup=()=>{
-      v.removeEventListener('seeked',finish);
-      v.removeEventListener('canplay',finish);
-      v.removeEventListener('loadeddata',finish);
-    };
-    v.addEventListener('seeked',finish,{once:true});
-    v.addEventListener('canplay',finish,{once:true});
-    v.addEventListener('loadeddata',finish,{once:true});
-    try{
-      v.currentTime=0;
-      if(v.readyState>=2 && Math.abs(v.currentTime)<=0.01){
-        setTimeout(finish,0);
-      }
-    }catch(e){finish()}
-    setTimeout(finish,800);
+  // Reassert REPLAY after asynchronous media loading, then seek both to exactly 0.
+  sides.forEach(side=>{
+    const {replay,live,mode,camState}=items[side];
+    if(live){
+      live.style.setProperty('display','none','important');
+      live.style.visibility='hidden';
+      live.style.opacity='0';
+    }
+    replay.style.setProperty('display','block','important');
+    replay.style.visibility='visible';
+    replay.style.opacity='1';
+    if(mode)mode.textContent=side+' · REPLAY';
+    if(camState)camState.textContent='리플레이';
+    try{replay.currentTime=0}catch(e){}
   });
 
-  await Promise.all([seekZero(a),seekZero(b)]);
-  try{a.currentTime=0}catch(e){}
-  try{b.currentTime=0}catch(e){}
+  // Start A and B on the same render edge.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const results=await Promise.allSettled(sides.map(side=>{
+    const r=items[side].replay;
+    try{return r.play()}catch(e){return Promise.reject(e)}
+  }));
 
-  // Start both from the same user gesture flow.
-  const pa=a.play();
-  const pb=b.play();
-  await Promise.allSettled([pa,pb]);
-  try{updateSeekFromVideo('A');updateSeekFromVideo('B')}catch(e){}
-  try{toast('A+B 0초 동시재생')}catch(e){}
+  // Chromium may reject one side transiently. Retry only the paused side.
+  await new Promise(resolve=>setTimeout(resolve,80));
+  sides.forEach(side=>{
+    const r=items[side].replay;
+    if(r.paused){
+      try{r.currentTime=0}catch(e){}
+      try{const p=r.play(); if(p&&p.catch)p.catch(()=>{})}catch(e){}
+    }
+  });
+
+  // Final hard-visible state. This specifically fixes B falling back to LIVE.
+  setTimeout(()=>{
+    sides.forEach(side=>{
+      const {st,replay,live,mode,camState}=items[side];
+      st.sensorReplayHold=true;
+      if(live){
+        live.style.setProperty('display','none','important');
+        live.style.visibility='hidden';
+        live.style.opacity='0';
+      }
+      replay.style.setProperty('display','block','important');
+      replay.style.visibility='visible';
+      replay.style.opacity='1';
+      replay.loop=true;
+      if(mode)mode.textContent=side+' · REPLAY';
+      if(camState)camState.textContent='리플레이';
+      if(replay.paused && !document.hidden){
+        try{const p=replay.play(); if(p&&p.catch)p.catch(()=>{})}catch(e){}
+      }
+    });
+    try{updateSeekFromVideo('A');updateSeekFromVideo('B')}catch(e){}
+    try{
+      const okA=!items.A.replay.paused;
+      const okB=!items.B.replay.paused;
+      toast(okA&&okB?'A+B 동시재생':'A/B 재생 확인 · A:'+(okA?'OK':'대기')+' B:'+(okB?'OK':'대기'));
+    }catch(e){}
+  },160);
 }
 
 </script>
@@ -3024,13 +3305,42 @@ function updateSV113StatusUI(ready=false){
     txt.textContent=SV_DETECT_MODE==='AUTO'?'AUTO · SENSOR':'센서 연결됨';
   }
 }
+/* ===== SENSOR A/B SAME-SHOT SYNCHRONIZED CAPTURE / REPLAY =====
+   Camera A and Camera B remain completely independent device streams.
+   The sensor supplies ONE shared capture clock: both MediaRecorders are started from
+   the same READY event, stopped from the same SHOT timer, and replay is revealed only
+   after BOTH clips are finalized. Playback starts for both in the same animation frame. */
+let SV113_AB_BATCH_SEQ=0;
+let SV113_AB_SESSION=null;
+let SV113_AB_SYNC_TIMER=null;
+
+function sv113NewABSession(){
+  if(SV113_AB_SYNC_TIMER){clearInterval(SV113_AB_SYNC_TIMER);SV113_AB_SYNC_TIMER=null;}
+  const sides=['A','B'].filter(side=>!!(typeof state!=='undefined'&&state[side]&&state[side].stream));
+  const session={
+    id:++SV113_AB_BATCH_SEQ,
+    sides:sides.slice(),
+    expected:new Set(),
+    ready:new Map(),
+    failed:new Set(),
+    startedAt:performance.now(),
+    replayStarted:false
+  };
+  SV113_AB_SESSION=session;
+  sides.forEach(side=>{state[side]._sensorBatchId=session.id;});
+  return session;
+}
+
 function sv113StartSide(side){
-  const s=window.state&&state[side];
+  const s=typeof state!=='undefined'&&state[side];
   if(!s||!s.stream)return false;
   try{
-    if(s.recorder&&s.recorder.state==='recording')return true;
+    // A sensor shot must own its recorder. If a legacy/manual recorder is already
+    // running, do not falsely count it as this synchronized batch.
+    if(s.recorder&&s.recorder.state==='recording')return false;
     s.poseCapture=true;       // disables the legacy 6-second stop timer
     s.poseAutoReplay=false;
+    s.sensorReplayHold=false;
     startClip(side);
     return !!(s.recorder&&s.recorder.state==='recording');
   }catch(e){
@@ -3038,33 +3348,232 @@ function sv113StartSide(side){
     return false;
   }
 }
+
 function sv113Ready(data){
   if(!shouldUseSensorDetection())return;
   updateSV113StatusUI(true);
   try{setPoseHeaderState('SENSOR · BALL READY')}catch(e){}
   try{showReadyCenter(true)}catch(e){}
   try{playReadyBeep()}catch(e){}
+
+  const session=sv113NewABSession();
+
+  // Same JS turn / same sensor edge. Each side still records from its own camera stream.
   const a=sv113StartSide('A');
   const b=sv113StartSide('B');
-  SV113_RECORDING=a||b;
+  if(a)session.expected.add('A'); else if(state.A)state.A._sensorBatchId=0;
+  if(b)session.expected.add('B'); else if(state.B)state.B._sensorBatchId=0;
+
+  SV113_RECORDING=session.expected.size>0;
+  if(session.expected.size===2){
+    try{toast('A/B 동시 녹화 시작')}catch(e){}
+  }else if(session.expected.size===1){
+    try{toast([...session.expected][0]+' 카메라만 녹화 시작')}catch(e){}
+  }
 }
+
 function sv113FinishSide(side){
-  const s=window.state&&state[side];
+  const s=typeof state!=='undefined'&&state[side];
   if(!s)return;
   try{
     s.poseAutoReplay=true;
+    s.sensorReplayHold=true;
     if(s.recorder&&s.recorder.state==='recording'){
-      s.recorder.stop();
+      const recorder=s.recorder;
+      // Flush the camera's latest encoded frame before stop. This is important
+      // for B devices whose encoder delivers the final WebM chunk slightly later.
+      try{if(typeof recorder.requestData==='function')recorder.requestData()}catch(e){}
+      recorder.stop();
       const st=document.getElementById('camState'+side);
       if(st)st.textContent='리플레이 준비';
     }else{
       s.poseAutoReplay=false;
       s.poseCapture=false;
+      const bid=Number(s._sensorBatchId||0);
+      if(bid)sv113ReplaySideFailed(side,bid);
     }
   }catch(e){
     s.poseAutoReplay=false;s.poseCapture=false;
+    const bid=Number(s._sensorBatchId||0);
+    if(bid)sv113ReplaySideFailed(side,bid);
   }
 }
+
+function sv113ReplaySideFailed(side,batchId){
+  const session=SV113_AB_SESSION;
+  if(!session||session.id!==Number(batchId)||session.replayStarted)return;
+  session.failed.add(side);
+  session.expected.delete(side);
+  if(state[side])state[side]._sensorBatchId=0;
+  sv113MaybeStartSynchronizedReplay(session);
+}
+
+function sv113ReplaySideReady(side,blob,newUrl,oldUrl,batchId){
+  const s=state[side];
+  const session=SV113_AB_SESSION;
+  if(!session||session.id!==Number(batchId)||session.replayStarted){
+    // Stale batch: preserve ordinary behavior rather than losing the clip.
+    if(s){s._sensorBatchId=0;s.sensorReplayHold=true;}
+    showReplay(side,true);
+    if(oldUrl&&oldUrl!==newUrl){try{URL.revokeObjectURL(oldUrl)}catch(e){}}
+    return;
+  }
+
+  session.ready.set(side,{blob,newUrl,oldUrl});
+  if(s){
+    s._sensorBatchId=0;
+    s.sensorReplayHold=true;
+  }
+  sv113MaybeStartSynchronizedReplay(session);
+}
+
+function sv113ReplayElementReady(side){
+  const r=document.getElementById('replay'+side);
+  if(!r)return Promise.resolve(false);
+  if(r.readyState>=2)return Promise.resolve(true);
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=(ok)=>{if(done)return;done=true;cleanup();resolve(ok)};
+    const cleanup=()=>{
+      r.removeEventListener('loadeddata',onReady);
+      r.removeEventListener('canplay',onReady);
+      r.removeEventListener('error',onError);
+      clearTimeout(timer);
+    };
+    const onReady=()=>finish(true);
+    const onError=()=>finish(false);
+    const timer=setTimeout(()=>finish(r.readyState>=1),1400);
+    r.addEventListener('loadeddata',onReady,{once:true});
+    r.addEventListener('canplay',onReady,{once:true});
+    r.addEventListener('error',onError,{once:true});
+    try{r.load()}catch(e){finish(false)}
+  });
+}
+
+function sv113MaybeStartSynchronizedReplay(session){
+  if(!session||session.replayStarted)return;
+  const needed=[...session.expected];
+  if(!needed.length)return;
+  if(!needed.every(side=>session.ready.has(side)))return;
+  session.replayStarted=true;
+  sv113StartSynchronizedReplay(session,needed);
+}
+
+async function sv113StartSynchronizedReplay(session,sides){
+  if(session&&session.source==='POSE')setMotionSignal('REPLAY · '+(sides.length===2?'A+B SYNC PLAY':((sides[0]||'CAM')+' PLAY')));
+  // Wait for BOTH WebM files to be decodable before changing either window to REPLAY.
+  await Promise.all(sides.map(sv113ReplayElementReady));
+  if(SV113_AB_SESSION!==session)return;
+
+  sides.forEach(side=>{
+    const s=state[side];
+    const r=document.getElementById('replay'+side);
+    const live=document.getElementById('live'+side);
+    const mode=document.getElementById('mode'+side);
+    const camState=document.getElementById('camState'+side);
+    if(!s||!r)return;
+    try{r.pause()}catch(e){}
+    r.loop=true;
+    // SENSOR replay hold: use the same hard restart behavior as A's normal autoplay replay.
+    // Some camera/WebM combinations (observed on B) can ignore the native loop flag once.
+    // Never fall back to LIVE here; keep replaying this swing until the next swing replaces it.
+    r.onended=()=>{
+      try{
+        if(!state[side] || !state[side].sensorReplayHold)return;
+        r.currentTime=0;
+        const again=r.play();
+        if(again&&typeof again.catch==='function')again.catch(()=>{});
+      }catch(e){}
+    };
+    r.volume=REPLAY_VOLUME;
+    r.playbackRate=window.SV95PlaybackRate||1;
+    try{r.currentTime=0}catch(e){}
+    if(live)live.style.display='none';
+    r.style.display='block';
+    if(mode)mode.textContent=side+' · REPLAY';
+    if(camState)camState.textContent='리플레이';
+    try{applyVideoFit(side)}catch(e){}
+    enableReplayControls(side,true);
+  });
+
+  // Keep both sensor replays alive until the next swing. If a browser/camera clip
+  // unexpectedly pauses at EOF despite loop=true, restart it instead of exposing LIVE.
+  sides.forEach(side=>{
+    const r=document.getElementById('replay'+side);
+    if(!r || r._sv113HoldBound)return;
+    r._sv113HoldBound=true;
+
+    const restartHeldReplay=()=>{
+      try{
+        const st=state[side];
+        if(!st || !st.sensorReplayHold || st.poseCapture)return;
+        if(r.style.display!=='block' || !st.url)return;
+
+        const nearEnd=Number.isFinite(r.duration)&&r.duration>0 &&
+          r.currentTime>=Math.max(0,r.duration-0.08);
+
+        if(nearEnd || r.ended){
+          try{r.currentTime=0}catch(e){}
+        }
+
+        if(r.paused || r.ended){
+          const again=r.play();
+          if(again&&typeof again.catch==='function')again.catch(()=>{});
+        }
+      }catch(e){}
+    };
+
+    r.addEventListener('pause',restartHeldReplay);
+    r.addEventListener('ended',restartHeldReplay);
+    r.addEventListener('waiting',()=>{setTimeout(restartHeldReplay,120)});
+    r.addEventListener('stalled',()=>{setTimeout(restartHeldReplay,120)});
+  });
+
+  // One rendering clock edge for A and B playback start.
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      sides.forEach(side=>{
+        const r=document.getElementById('replay'+side);
+        if(!r)return;
+        try{r.currentTime=0}catch(e){}
+      });
+      sides.forEach(side=>{
+        const r=document.getElementById('replay'+side);
+        if(!r)return;
+        const p=r.play();
+        if(p&&typeof p.catch==='function')p.catch(()=>{});
+      });
+      // Confirm A/B UI on the same replay start edge.
+      sides.forEach(side=>{
+        const mode=document.getElementById('mode'+side);
+        const camState=document.getElementById('camState'+side);
+        if(mode)mode.textContent=side+' · REPLAY';
+        if(camState)camState.textContent='리플레이';
+      });
+    });
+  });
+
+  // A/B independent replay stability fix:
+  // synchronize only the initial play edge above, then let each WebM run/loop independently.
+  // Repeatedly seeking B to A caused some B-camera WebM clips to stall or appear frozen.
+  if(SV113_AB_SYNC_TIMER){clearInterval(SV113_AB_SYNC_TIMER);SV113_AB_SYNC_TIMER=null;}
+
+  sides.forEach(side=>{
+    const item=session.ready.get(side);
+    if(item&&item.oldUrl&&item.oldUrl!==item.newUrl){
+      setTimeout(()=>{try{URL.revokeObjectURL(item.oldUrl)}catch(e){}},1200);
+    }
+  });
+  try{toast(sides.length===2?'A/B 동시 리플레이':'센서 리플레이')}catch(e){}
+}
+
+/* ===== R8 A-ENGINE CLONE FIX =====
+   B-specific EOF/HOLD override removed.
+   A and B now use the exact same shared replay engine above:
+   same Blob -> replay element handoff, same loop/onended restart, same pause/ended/waiting/stalled hold,
+   and the same synchronized first-play edge. Camera streams remain independent.
+*/
+
 function sv113EstimatedDistance(data){
   // V113 is a trigger sensor, not a precision launch monitor.
   // Produce a restrained coaching-display estimate; never label it measured.
@@ -3087,8 +3596,10 @@ function sv113Shot(data){
 
   if(SV113_STOP_TIMER)clearTimeout(SV113_STOP_TIMER);
   SV113_STOP_TIMER=setTimeout(()=>{
-    sv113FinishSide('A');
-    sv113FinishSide('B');
+    // One shared stop edge for the two independent camera recorders.
+    const session=SV113_AB_SESSION;
+    if(session&&session.expected.has('A'))sv113FinishSide('A');
+    if(session&&session.expected.has('B'))sv113FinishSide('B');
     SV113_RECORDING=false;
   },2300);
 }
@@ -3127,6 +3638,38 @@ async function pollSV113(){
     SV113_POLL_BUSY=false;
   }
 }
+
+
+/* ===== V107 SENSOR REPLAY HOLD WATCHDOG =====
+   Keep the latest sensor-triggered replay running until the next completed shot
+   replaces the clip. Also keep LIVE/REPLAY UI synchronized with the actual
+   sensor replay state. It does not alter layout/design. */
+setInterval(()=>{
+  try{
+    ['A','B'].forEach(side=>{
+      const s=typeof state!=='undefined'&&state[side];
+      const r=document.getElementById('replay'+side);
+      const live=document.getElementById('live'+side);
+      const mode=document.getElementById('mode'+side);
+      const camState=document.getElementById('camState'+side);
+      if(!s||!r||!s.sensorReplayHold||!s.url)return;
+
+      // A/B sensor replay is the source of truth while HOLD is active.
+      // If another legacy path rewrites B as LIVE, restore the actual replay state.
+      if(live)live.style.display='none';
+      r.style.display='block';
+      if(mode)mode.textContent=side+' · REPLAY';
+      if(camState)camState.textContent='리플레이';
+
+      r.loop=true;
+      if(r.ended){try{r.currentTime=0}catch(e){}}
+      if(r.paused && !document.hidden){
+        const p=r.play();
+        if(p&&typeof p.catch==='function')p.catch(()=>{});
+      }
+    });
+  }catch(e){}
+},500);
 document.addEventListener('DOMContentLoaded',()=>{
   setSVDetectMode(SV_DETECT_MODE);
   if(SV113_IS_PREVIEW){
