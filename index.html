@@ -317,7 +317,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
   height:38px!important;
   z-index:101!important;
   border-radius:7px!important;
-  font-size:12px!important;
+  font-size:15px!important;
+  line-height:1!important;
   font-weight:900!important;
   color:#fff!important;
   cursor:pointer!important;
@@ -660,12 +661,29 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 #sensorModes button:active{transform:translateY(1px)}
 #sensorBtn{pointer-events:none!important}
 
+\n/* ===== MANUAL REC / TRIM · measured layout patch ===== */
+#manualRecBtn,#manualStopBtn,#manualTrimBtn{position:absolute!important;z-index:140!important;box-sizing:border-box!important;border-radius:7px!important;font-weight:900!important;cursor:pointer!important;color:#fff!important}
+#manualRecBtn{left:118px!important;top:340px!important;width:82px!important;height:35px!important;border:1px solid #e15d5d!important;background:rgba(105,24,24,.92)!important;font-size:11px!important}
+#manualStopBtn{left:29px!important;top:386px!important;width:171px!important;height:35px!important;border:1px solid #e15d5d!important;background:rgba(105,24,24,.94)!important;font-size:12px!important;display:none}
+#manualTrimBtn{left:29px!important;top:438px!important;width:171px!important;height:35px!important;border:1px solid #d7b84b!important;background:rgba(74,61,16,.94)!important;font-size:12px!important;display:none}
+#manualRecClock{position:absolute!important;left:29px!important;top:376px!important;width:171px!important;height:10px!important;z-index:141!important;text-align:center!important;color:#ff7c7c!important;font-size:9px!important;font-weight:900!important;display:none}
+#autoOn.manual-split{width:171px!important}
+.manual-hidden{display:none!important}
+.trimRange{position:absolute!important;z-index:145!important;width:166px!important;height:20px!important;margin:0!important;padding:0!important;background:transparent!important;pointer-events:none!important;-webkit-appearance:none!important;appearance:none!important}
+.trimRange::-webkit-slider-runnable-track{height:4px;background:transparent}
+.trimRange::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:20px;margin-top:-8px;border-radius:4px;background:#e7c95e;border:2px solid #fff;pointer-events:auto;cursor:ew-resize}
+#trimInA,#trimOutA{left:461px!important;top:520px!important} #trimInB,#trimOutB{left:1109px!important;top:520px!important}
+#trimInfo{position:absolute;left:29px;top:478px;width:171px;height:29px;z-index:141;color:#d7b84b;font-size:9px;font-weight:800;text-align:center;line-height:14px;display:none}
+#trimActions{position:absolute;left:29px;top:510px;width:171px;z-index:141;display:none;gap:5px;flex-wrap:wrap}
+#trimActions button{height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.22);background:rgba(12,31,23,.95);color:#fff;font-size:9px;font-weight:900;cursor:pointer}
+#trimPreviewBtn{width:83px} #trimSaveBtn{width:83px;border-color:#58d85a!important} #trimCancelBtn{width:171px}
+
 </style>
 
 <script>
 const state={
- A:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:90,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false},
- B:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:0,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false}
+ A:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:90,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false,manualCapture:false},
+ B:{stream:null,recorder:null,chunks:[],lastBlob:null,url:null,recentSavedBlob:null,recentSavedUrl:null,rotate:0,auto:false,fitScale:1,poseAutoReplay:false,poseCapture:false,sensorReplayHold:false,manualCapture:false}
 };
 let masterVolume=.60,simTimer=null,simIndex=0;
 const REPLAY_VOLUME=0.30;
@@ -677,29 +695,80 @@ addEventListener('resize',()=>{fit();applyVideoFit('A');applyVideoFit('B');});
 const TS_BASE_URL =
   "https://script.google.com/macros/s/AKfycbzOxP9ZUxVe2BVp4QWql4sxdvIlUrB1VoXvSx2lW3sARUX8vFj8fMb23vveuUdNloZnaA/exec";
 
-function getSVMemberId(){
-  try{
-    const p = new URLSearchParams(location.search);
-    return (p.get("member") || p.get("id") || "").trim().toUpperCase();
-  }catch(e){
-    return "";
-  }
+function getSVFlowParams(){
+  try{return new URLSearchParams(location.search);}catch(e){return new URLSearchParams();}
 }
-
-function openTSStandalone(){
-  const memberId = getSVMemberId();
-  let url = TS_BASE_URL + "?page=ts100";
-  if(memberId){
-    url += "&id=" + encodeURIComponent(memberId);
+function getSVMemberId(){
+  const p=getSVFlowParams();
+  return (p.get("member") || p.get("id") || p.get("memberId") || "").trim().toUpperCase();
+}
+function getSVMemberName(){
+  const p=getSVFlowParams();
+  let name=(p.get("name") || p.get("memberName") || p.get("member_name") || "").trim();
+  if(!name){
+    try{name=(sessionStorage.getItem("TUP_FLOW_MEMBER_NAME")||"").trim();}catch(e){}
   }
+  return name;
+}
+function getSVLSCToken(){
+  const p=getSVFlowParams();
+  let token=(p.get("lscToken")||"").trim();
+  if(!token){
+    try{token=(sessionStorage.getItem("TUP_FLOW_LSC_TOKEN")||"").trim();}catch(e){}
+  }
+  return token;
+}
+function rememberSVFlowContext(){
+  try{
+    const id=getSVMemberId(), name=getSVMemberName(), token=getSVLSCToken();
+    if(id) sessionStorage.setItem("TUP_FLOW_MEMBER_ID",id);
+    if(name) sessionStorage.setItem("TUP_FLOW_MEMBER_NAME",name);
+    if(token) sessionStorage.setItem("TUP_FLOW_LSC_TOKEN",token);
+  }catch(e){}
+}
+rememberSVFlowContext();
 
-  const w = window.open(url, "TUP_TS_STANDALONE");
+function buildSVToTSUrl(){
+  const q=new URLSearchParams();
+  q.set("page","ts");
+  const memberId=getSVMemberId();
+  const memberName=getSVMemberName();
+  const lscToken=getSVLSCToken();
+  if(memberId) q.set("id",memberId);
+  if(memberId) q.set("member",memberId);
+  if(memberName) q.set("name",memberName);
+  if(memberName) q.set("memberName",memberName);
+  if(lscToken) q.set("lscToken",lscToken);
+  q.set("source","SV");
+  return TS_BASE_URL+"?"+q.toString();
+}
+function openTSStandalone(){
+  const url=buildSVToTSUrl();
+  const w=window.open(url,"TUP_TS_ANALYZER");
   if(!w){
     toast("TS 분석창을 열 수 없습니다 · 팝업 차단을 확인하세요.");
     return;
   }
-  try{ w.focus(); }catch(e){}
+  try{w.focus();}catch(e){}
 }
+
+/* 실제 'SV 앱 종료' 버튼에 연결할 수 있는 복귀 함수.
+   현재 LIVE 종료 버튼(exitLiveAB)은 리플레이 복귀용이므로 건드리지 않는다. */
+function returnSVToLSC(){
+  const id=getSVMemberId();
+  const token=getSVLSCToken();
+  if(!token){
+    toast("LSC 복귀 토큰이 없습니다 · LSC에서 SV를 다시 열어주세요.");
+    return false;
+  }
+  const q=new URLSearchParams();
+  q.set("page","lsc");
+  if(id) q.set("id",id);
+  q.set("token",token);
+  location.href=TS_BASE_URL+"?"+q.toString();
+  return true;
+}
+window.returnSVToLSC=returnSVToLSC;
 
 function toast(msg){
  const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';
@@ -1070,9 +1139,11 @@ function startClip(side){
    updateRecentSavedButton(side);
 
    const r=document.getElementById('replay'+side);
-   const wantReplay=!!(s.auto || s.poseAutoReplay);
+   const wantReplay=!!(s.auto || s.poseAutoReplay || s.manualCapture);
    s.poseAutoReplay=false;
    s.poseCapture=false;
+   const wasManual=!!s.manualCapture;
+   s.manualCapture=false;
 
    // Swap to the newly completed swing only now.
    r.pause();
@@ -1125,7 +1196,7 @@ function startClip(side){
 
  // Ordinary timed recording still stops at 6 seconds.
  // POSE recording is stopped only by the swing/replay controller.
- if(!s.poseCapture){
+ if(!s.poseCapture && !s.manualCapture){
    setTimeout(()=>{
      if(s.recorder&&s.recorder.state==='recording'){
        s.recorder.stop();
@@ -1707,6 +1778,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<!-- PATCH: MANUAL_DURATION_PRESERVE + TRIM_DURATION_FALLBACK + BUTTON_RESTORE -->
 </head>
 <body>
 <div id="viewport"><div id="stage" aria-label="SV_0.1 BETA approved design">
@@ -1758,6 +1830,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button id="camASelect" class="hit" onclick="connectCam('A')" aria-label="카메라 A"></button>
   <button id="camBSelect" class="hit" onclick="connectCam('B')" aria-label="카메라 B"></button>
 <button id="autoOn" class="sv95-auto-master sv95-auto-off" onclick="toggleAutoBothSV95()" aria-label="A/B 자동촬영">자동촬영 OFF</button>
+<button id="manualRecBtn" type="button" onclick="manualRecStart()" aria-label="A/B 수동녹화">● 수동 REC</button>
+<button id="manualStopBtn" type="button" onclick="manualRecStop()" aria-label="A/B 수동녹화 종료">■ 녹화종료</button>
+<div id="manualRecClock">REC 00:00</div>
+<button id="manualTrimBtn" type="button" onclick="enterTrimMode()" aria-label="녹화 구간 편집">✂ 구간편집</button>
+<div id="trimInfo">IN 0.00s · OUT 0.00s</div>
+<div id="trimActions"><button id="trimPreviewBtn" type="button" onclick="previewTrim()">▶ 미리보기</button><button id="trimSaveBtn" type="button" onclick="applyTrimAndSave()">✂ 구간저장</button><button id="trimCancelBtn" type="button" onclick="exitTrimMode()">취소</button></div>
+
   <button id="rotA" class="hit" onclick="event.shiftKey?setFitScale('A',0.78):rotate('A')" aria-label="회전 A"></button>
   <button id="rotB" class="hit" onclick="event.shiftKey?setFitScale('B',0.78):rotate('B')" aria-label="회전 B"></button>
   <button id="saveA" class="hit" onclick="saveLast('A')" aria-label="A 저장"></button>
@@ -1770,7 +1849,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button id="jointAOff" class="hit joint-state" onclick="setJoint('A',false)" aria-label="A 관절 OFF">OFF</button>
   <button id="jointBOn" class="hit joint-state" onclick="setJoint('B',true)" aria-label="B 관절 ON">ON</button>
   <button id="jointBOff" class="hit joint-state" onclick="setJoint('B',false)" aria-label="B 관절 OFF">OFF</button>
-  <button id="liveMain" onclick="showLiveAB()" aria-label="A/B 라이브 보기">LIVE</button>
+  <button id="liveMain" onclick="manualRecToggleSV()" aria-label="A/B 수동 녹화">녹화</button>
   <button id="liveExit" onclick="exitLiveAB()" aria-label="라이브 보기 종료">종료</button>
   <button id="rotVideoA" class="hit" onclick="rotate('A')" aria-label="영상 A 회전"></button>
   <button id="rotVideoB" class="hit" onclick="rotate('B')" aria-label="영상 B 회전"></button>
@@ -1795,6 +1874,11 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button id="frameNextB" class="sv95-frame-btn" onclick="stepFrameExact('B',1)" aria-label="B 다음 1프레임">1F▶</button>
   <input id="seekA" class="sv95-seek-hit" type="range" min="0" max="1000" value="0" step="1" aria-label="A 재생 위치">
   <input id="seekB" class="sv95-seek-hit" type="range" min="0" max="1000" value="0" step="1" aria-label="B 재생 위치">
+  <input id="trimInA" class="trimRange" type="range" min="0" max="1000" value="0" step="1" hidden>
+  <input id="trimOutA" class="trimRange" type="range" min="0" max="1000" value="1000" step="1" hidden>
+  <input id="trimInB" class="trimRange" type="range" min="0" max="1000" value="0" step="1" hidden>
+  <input id="trimOutB" class="trimRange" type="range" min="0" max="1000" value="1000" step="1" hidden>
+
 
 
   <button id="recentSavedA" type="button" onclick="playRecentSaved('A')" aria-label="A 최근 저장 영상 재생"></button>
@@ -1877,6 +1961,7 @@ function vR8Diff(prev,cur){
 }
 
 function vR8Trigger(side,now,metric){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   const m=vR8Motion[side];
   if(now-m.lastTrigger<1800 || now-vR8GlobalTriggerAt<900)return;
   m.lastTrigger=now;
@@ -2163,6 +2248,7 @@ function v54Presence(lm){
 }
 
 function v54StartReplayRecord(){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(v54RecordStarted)return;
   const sides=vR7ConnectedSides();
   if(!sides.length)return;
@@ -2196,6 +2282,7 @@ function v54FinishReplayRecord(){
 }
 
 function v56ScheduleReplay(){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(v56ReplayPending)return;
   v56ReplayPending=true;
   if(v56ReplayTimer)clearTimeout(v56ReplayTimer);
@@ -2449,6 +2536,7 @@ function ema(prev,cur,a=.42){return prev?{x:prev.x*(1-a)+cur.x*a,y:prev.y*(1-a)+
    4) SWING 후 0.18초 이상 + 큰 이동/속도면 SHOT 확정.
 */
 function detectSwingB(l){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
   const now=performance.now();
   if(!v54Presence(l)){
@@ -2492,6 +2580,7 @@ function detectSwingB(l){
 }
 
 function detectSwing(l,side='A'){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
 
   const now=performance.now();
@@ -3092,7 +3181,16 @@ function send(side){
   }catch(e){}
 
   try{
-    /* 2순위: 같은 브라우저에서 이미 열려 있는 TS100 named window */
+    /* 2순위: LSC/SV/TS 공통 TS named window */
+    if(!target){
+      var namedTS = window.open('', 'TUP_TS_ANALYZER');
+      if(namedTS && !namedTS.closed && namedTS.location.href !== 'about:blank'){
+        target = namedTS;
+      }else if(namedTS && namedTS.location.href === 'about:blank'){
+        namedTS.close();
+      }
+    }
+    /* 구버전 호환 named window */
     if(!target){
       var namedTS = window.open('', 'TUP_TS_STANDALONE');
       if(namedTS && !namedTS.closed && namedTS.location.href !== 'about:blank'){
@@ -3262,9 +3360,16 @@ const SV113_STATUS_URL='http://127.0.0.1:8765/status';
    실제 배포/로컬 실행에서는 기존 SENSOR BRIDGE 로직을 그대로 사용합니다. */
 const SV113_IS_PREVIEW=(()=>{
   const host=String(location.hostname||'').toLowerCase();
+  const protocol=String(location.protocol||'').toLowerCase();
   const referrer=String(document.referrer||'').toLowerCase();
-  return host==='chatgpt.com' || host.endsWith('.chatgpt.com') ||
-    referrer.includes('chatgpt.com');
+  // Sensor bridge access is allowed only in the real SV deployment or a direct local file.
+  // ChatGPT/preview/sandbox/blob/data contexts must never poll 127.0.0.1.
+  const isRealSVHost=(host==='tup-golf-sv.github.io');
+  const isDirectLocalFile=(protocol==='file:');
+  const isExplicitLocalHost=(host==='localhost' || host==='127.0.0.1');
+  const isChatGPT=host==='chatgpt.com' || host.endsWith('.chatgpt.com') || referrer.includes('chatgpt.com');
+  const isSandboxLike=protocol==='blob:' || protocol==='data:' || (!host && protocol!=='file:');
+  return isChatGPT || isSandboxLike || !(isRealSVHost || isDirectLocalFile || isExplicitLocalHost);
 })();
 let SV_DETECT_MODE=localStorage.getItem('SV_DETECT_MODE')||'AUTO';
 let BALL_SENSOR_CONNECTED=false;
@@ -3350,6 +3455,7 @@ function sv113StartSide(side){
 }
 
 function sv113Ready(data){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(!shouldUseSensorDetection())return;
   updateSV113StatusUI(true);
   try{setPoseHeaderState('SENSOR · BALL READY')}catch(e){}
@@ -3584,6 +3690,7 @@ function sv113EstimatedDistance(data){
   return {carry, total, estimated:true, source:'SENSOR-V113', timestamp:Date.now()};
 }
 function sv113Shot(data){
+  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(!shouldUseSensorDetection())return;
   try{showReadyCenter(false)}catch(e){}
   try{setPoseHeaderState('SENSOR · SHOT')}catch(e){}
@@ -3608,7 +3715,7 @@ async function pollSV113(){
   if(SV113_POLL_BUSY)return;
   SV113_POLL_BUSY=true;
   try{
-    const r=await fetch(SV113_STATUS_URL+'?t='+Date.now(),{cache:'no-store'});
+    const r=await fetch(SV113_STATUS_URL,{cache:'no-store'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const d=await r.json();
     BALL_SENSOR_CONNECTED=!!(d.bridge&&d.connected);
@@ -3682,5 +3789,559 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 </script>
 
+
+<script id="sv-manual-rec-trim-v1">
+(function(){
+'use strict';
+const M={recording:false,startedAt:0,timer:null,trim:false,inP:0,outP:1000};
+function el(id){return document.getElementById(id)}
+function connected(){return ['A','B'].filter(side=>state?.[side]?.stream)}
+function setClock(){
+ const sec=Math.max(0,Math.floor((Date.now()-M.startedAt)/1000));
+ el('manualRecClock').textContent='REC '+String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');
+}
+function setNormalControls(mode){
+ const auto=el('autoOn'), rec=el('manualRecBtn'), stop=el('manualStopBtn'), trim=el('manualTrimBtn');
+ const speed=['speedDownSV95','speedValueSV95','speedUpSV95'];
+ if(mode==='recording'){
+   auto.classList.remove('manual-split'); auto.classList.add('manual-hidden'); rec.style.display='none';
+   stop.style.display='block'; trim.style.display='none'; el('manualRecClock').style.display='block';
+   speed.forEach(id=>el(id)?.classList.add('manual-hidden')); el('abSyncPlay')?.classList.add('manual-hidden');
+ }else{
+   auto.classList.remove('manual-split'); auto.classList.remove('manual-hidden'); rec.style.display='block';
+   stop.style.display='none'; el('manualRecClock').style.display='none';
+   speed.forEach(id=>el(id)?.classList.remove('manual-hidden'));
+   if(mode==='recorded'){trim.style.display='block'; el('abSyncPlay')?.classList.remove('manual-hidden')}
+   else{trim.style.display='none'; el('abSyncPlay')?.classList.remove('manual-hidden')}
+ }
+}
+window.manualRecStart=function(){
+ if(M.recording)return;
+ const sides=connected();
+ if(!sides.length){toast('A/B 카메라를 먼저 연결하세요.');return}
+ // Manual recording must not be interrupted by automatic shot detection.
+ sides.forEach(side=>{state[side].manualCapture=true; state[side].poseCapture=true; state[side].poseAutoReplay=false;});
+ M.recording=true;M.startedAt=Date.now();setNormalControls('recording');setClock();M.timer=setInterval(setClock,250);
+ sides.forEach(side=>{try{startClip(side)}catch(e){console.error(e)}});
+ toast('수동녹화 시작 · '+sides.join('+'));
+};
+window.manualRecStop=function(){
+ if(!M.recording)return;
+ clearInterval(M.timer);M.timer=null;M.recording=false;
+ connected().forEach(side=>{
+   const r=state[side]?.recorder;
+   if(r&&r.state==='recording'){try{r.stop()}catch(e){}}
+   const cs=el('camState'+side);if(cs)cs.textContent='연결됨';
+ });
+ setNormalControls('recorded');toast('수동녹화 종료 · 구간편집 가능');
+};
+function trimEls(show){
+ ['trimInA','trimOutA','trimInB','trimOutB'].forEach(id=>{const x=el(id);if(x)x.hidden=!show});
+ el('trimInfo').style.display=show?'block':'none';el('trimActions').style.display=show?'flex':'none';
+ ['seekA','seekB','frameBackA','frameNextA','frameBackB','frameNextB'].forEach(id=>el(id)?.classList.toggle('manual-hidden',show));
+}
+function duration(side){const r=el('replay'+side);return Number.isFinite(r?.duration)?r.duration:0}
+function syncRanges(src){
+ let a=Number(el(src).value); if(src.includes('In'))M.inP=Math.min(a,M.outP-5); else M.outP=Math.max(a,M.inP+5);
+ ['trimInA','trimInB'].forEach(id=>el(id).value=M.inP);['trimOutA','trimOutB'].forEach(id=>el(id).value=M.outP);
+ const ds=connected().map(duration).filter(Boolean);const d=ds.length?Math.min(...ds):0;
+ el('trimInfo').textContent='IN '+(d*M.inP/1000).toFixed(2)+'s · OUT '+(d*M.outP/1000).toFixed(2)+'s';
+}
+window.enterTrimMode=function(){
+ const sides=connected().filter(s=>state[s]?.lastBlob);
+ if(!sides.length){toast('편집할 수동녹화 영상이 없습니다.');return}
+ M.trim=true;M.inP=0;M.outP=1000;trimEls(true);el('manualTrimBtn').style.display='none';
+ ['trimInA','trimOutA','trimInB','trimOutB'].forEach(id=>{el(id).oninput=()=>syncRanges(id)});syncRanges('trimInA');
+ sides.forEach(side=>showReplay(side,false)); toast('IN / OUT 손잡이로 저장 구간을 선택하세요.');
+};
+window.exitTrimMode=function(){M.trim=false;trimEls(false);setNormalControls('recorded')};
+window.previewTrim=function(){
+ const sides=connected().filter(s=>state[s]?.lastBlob); if(!sides.length)return;
+ sides.forEach(side=>{const r=el('replay'+side),d=duration(side);if(!d)return;r.currentTime=d*M.inP/1000;r.playbackRate=1;});
+ requestAnimationFrame(()=>sides.forEach(side=>el('replay'+side)?.play().catch(()=>{})));
+ const d=Math.min(...sides.map(duration).filter(Boolean));setTimeout(()=>sides.forEach(side=>el('replay'+side)?.pause()),Math.max(50,d*(M.outP-M.inP)));
+};
+async function rerecordSegment(side){
+ const s=state[side], r=el('replay'+side); if(!s?.lastBlob||!r)throw new Error(side+' 영상 없음');
+ if(!Number.isFinite(r.duration)||!r.duration)await new Promise((res,rej)=>{r.onloadedmetadata=res;setTimeout(()=>rej(new Error('metadata timeout')),2500)});
+ const d=r.duration, st=d*M.inP/1000, en=d*M.outP/1000;
+ if(en-st<0.15)throw new Error('선택 구간이 너무 짧습니다.');
+ const cap=r.captureStream?.bind(r)||r.mozCaptureStream?.bind(r); if(!cap)throw new Error('Chrome captureStream 미지원');
+ r.pause();r.currentTime=st;await new Promise(res=>{if(r.readyState>=2)return res();r.onseeked=()=>res()});
+ const stream=cap();const chunks=[];let mime='';for(const m of ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'])if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+ const mr=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);mr.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+ const done=new Promise((res,rej)=>{mr.onstop=()=>chunks.length?res(new Blob(chunks,{type:mr.mimeType||'video/webm'})):rej(new Error('trim blob empty'));mr.onerror=e=>rej(e.error||e)});
+ mr.start(100);await r.play();await new Promise(res=>setTimeout(res,(en-st)*1000));r.pause();if(mr.state==='recording')mr.stop();return await done;
+}
+window.applyTrimAndSave=async function(){
+ const sides=connected().filter(s=>state[s]?.lastBlob);if(!sides.length)return;
+ el('trimSaveBtn').disabled=true;toast('A/B 선택구간 생성 중…');
+ try{
+   const blobs=await Promise.all(sides.map(rerecordSegment));
+   sides.forEach((side,i)=>{const s=state[side];const old=s.url;s.lastBlob=blobs[i];s.url=URL.createObjectURL(blobs[i]);const r=el('replay'+side);r.src=s.url;r.load();if(old)try{URL.revokeObjectURL(old)}catch(e){}});
+   trimEls(false);setNormalControls('normal');
+   for(const side of sides)await saveLast(side);
+   toast('선택구간 저장 완료 · '+sides.join('+'));
+ }catch(e){console.error('MANUAL TRIM',e);toast('구간편집 실패 · '+(e.message||e));}
+ finally{el('trimSaveBtn').disabled=false}
+};
+addEventListener('DOMContentLoaded',()=>setNormalControls('normal'));
+})();
+</script>
+
+
+<style id="sv-final-manual-ab-trim-style">
+/* 기존 SV 레이아웃/좌표는 건드리지 않고 중복 수동녹화 UI만 숨김 */
+#manualRecBtn,#manualStopBtn,#manualTrimBtn,#manualRecClock,#trimInfo,#trimActions,
+#trimInA,#trimOutA,#trimInB,#trimOutB{display:none!important}
+
+/* LIVE 자리 재사용: 새 좌표를 만들지 않음 */
+#liveMain.sv-rec-active{
+  border-color:#ff7a7a!important;
+  background:linear-gradient(180deg,#e84a4a,#9b1515)!important;
+  box-shadow:0 0 10px rgba(255,70,70,.35)!important;
+}
+
+/* SV 내부 고정 모달: 본문 scrollWidth/scrollHeight를 늘리지 않음 */
+#svTrimModal{
+  position:fixed;inset:0;z-index:10000;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,.76);padding:28px;box-sizing:border-box;
+}
+#svTrimModal.open{display:flex}
+#svTrimDialog{
+  width:min(1180px,calc(100vw - 72px));
+  max-height:calc(100vh - 72px);
+  overflow:hidden;box-sizing:border-box;
+  border:1px solid #557061;border-radius:12px;
+  background:#101713;color:#edf4ef;
+  box-shadow:0 18px 60px rgba(0,0,0,.55);
+  font-family:"Malgun Gothic","Noto Sans KR",Arial,sans-serif;
+}
+#svTrimHead{
+  height:48px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;border-bottom:1px solid #314238;box-sizing:border-box;
+  font-weight:900;font-size:15px;
+}
+#svTrimClose{border:0;background:transparent;color:#aebbb3;font-size:22px;cursor:pointer}
+#svTrimVideos{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 14px 8px}
+.svTrimPane{min-width:0}
+.svTrimLabel{font-size:12px;font-weight:900;color:#9fc8aa;margin:0 0 5px 2px}
+.svTrimVideo{
+  display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;
+  border:1px solid #33473a;border-radius:7px;
+}
+#svTrimControls{padding:8px 16px 15px}
+.svTrimRow{display:flex;align-items:center;gap:9px;margin-top:9px}
+.svTrimRow label{width:58px;font-size:11px;font-weight:900;color:#b9c9bf}
+.svTrimRow input[type=range]{flex:1;min-width:0}
+.svTrimTime{width:128px;text-align:right;font:700 11px Arial;color:#d8e7dd}
+#svOffsetBox{display:flex;align-items:center;gap:7px;margin-left:auto}
+#svOffsetBox button,#svTrimActionsFinal button{
+  height:32px;border-radius:6px;border:1px solid #496153;
+  background:#1b2921;color:#eef5f0;font-weight:800;cursor:pointer;
+}
+#svOffsetBox button{width:46px}
+#svBOffset{min-width:74px;text-align:center;font:800 11px Arial;color:#e5c95d}
+#svTrimActionsFinal{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+#svTrimActionsFinal button{padding:0 15px}
+#svTrimSaveFinal{border-color:#c6a93f!important;background:#5a4a13!important}
+#svTrimPreviewFinal{border-color:#4e8c60!important;background:#173d22!important}
+#svTrimStatus{margin-right:auto;font-size:11px;color:#9eaea4;align-self:center}
+#svTrimRangeBlock{margin-top:7px;padding:9px 2px 5px}
+.svTrimRangeCaption,.svTrimRangeTimes{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:800;color:#aebbb3}
+.svTrimRangeCaption strong{font-size:13px;color:#f1d466;letter-spacing:.2px}
+#svTrimRangeTrack{position:relative;height:42px;margin:5px 4px 2px}
+#svTrimRangeTrack:before{content:"";position:absolute;left:0;right:0;top:17px;height:8px;border-radius:6px;background:#344139;border:1px solid #526158;box-sizing:border-box}
+#svTrimSavedRange{position:absolute;top:17px;height:8px;border-radius:6px;background:#2e8b4b;box-shadow:0 0 0 1px #6cb77e inset;pointer-events:none}
+.svTrimRangeInput{position:absolute;left:0;top:10px;width:100%;height:22px;margin:0;background:transparent;pointer-events:none;appearance:none;-webkit-appearance:none}
+.svTrimRangeInput::-webkit-slider-runnable-track{height:8px;background:transparent}
+.svTrimRangeInput::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:18px;height:28px;margin-top:-10px;border-radius:5px;border:2px solid #f0d05b;background:#17251c;box-shadow:0 0 0 2px rgba(0,0,0,.35);pointer-events:auto;cursor:ew-resize}
+.svTrimRangeInput::-moz-range-track{height:8px;background:transparent}
+.svTrimRangeInput::-moz-range-thumb{width:16px;height:26px;border-radius:5px;border:2px solid #f0d05b;background:#17251c;pointer-events:auto;cursor:ew-resize}
+#svTrimInBadge,#svTrimOutBadge{position:absolute;top:-2px;transform:translateX(-50%);font:900 10px Arial;color:#f1d466;white-space:nowrap;pointer-events:none}
+.svTrimRangeTimes{font-family:Arial,sans-serif;color:#c8d4cc}
+#svTrimSelectedTime{color:#9fe0ae;font-weight:900}
+.svTrimPlayRow{display:none!important}
+#svTrimPlayMarker{position:absolute;top:8px;transform:translateX(-50%);z-index:8;pointer-events:none;color:#fff;font:900 18px Arial;text-shadow:0 1px 3px #000}
+#svTrimPlayMarker:after{content:"";display:block;width:2px;height:22px;background:#fff;margin:-2px auto 0;box-shadow:0 0 3px #000}
+#svTrimPauseFinal{height:34px;padding:0 15px;border-radius:6px;border:1px solid #607067;background:#16221b;color:#e8eee9;font-weight:900;cursor:pointer;margin-left:auto}
+#svTrimPreviewFinal{margin-left:6px!important}
+#svTrimActionsFinal{display:flex;align-items:center;gap:8px}
+#svTrimStatus{margin-right:auto}
+#svTrimInBadge,#svTrimOutBadge{font-size:12px!important;font-weight:900!important}
+#svTrimRangeTrack{height:48px!important}
+@media(max-width:900px){
+  #svTrimModal{padding:12px}
+  #svTrimDialog{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}
+  #svTrimVideos{grid-template-columns:1fr;max-height:54vh;overflow:auto}
+}
+</style>
+
+<div id="svTrimModal" aria-hidden="true">
+  <div id="svTrimDialog" role="dialog" aria-modal="true" aria-label="A/B 녹화 구간편집">
+    <div id="svTrimHead">
+      <span>A/B 녹화 구간편집 · 공통 타임라인</span>
+      <button id="svTrimClose" type="button" aria-label="닫기">×</button>
+    </div>
+    <div id="svTrimVideos">
+      <div class="svTrimPane"><div class="svTrimLabel">A 영상</div><video id="svTrimVideoA" class="svTrimVideo" playsinline></video></div>
+      <div class="svTrimPane"><div class="svTrimLabel">B 영상</div><video id="svTrimVideoB" class="svTrimVideo" playsinline></video></div>
+    </div>
+    <div id="svTrimControls">
+      <div id="svTrimRangeBlock">
+        <div class="svTrimRangeCaption"><span>녹화 시작점</span><strong>IN ▶▶ &nbsp; 저장구간 &nbsp; ◀◀ OUT</strong><span>녹화 종료점</span></div>
+        <div id="svTrimRangeTrack">
+          <div id="svTrimSavedRange"></div>
+          <div id="svTrimPlayMarker" style="left:0%">▶</div>
+          <input id="svTrimInFinal" class="svTrimRangeInput svTrimInInput" type="range" min="0" max="1000" value="0" step="1" aria-label="저장구간 시작 IN">
+          <input id="svTrimOutFinal" class="svTrimRangeInput svTrimOutInput" type="range" min="0" max="1000" value="1000" step="1" aria-label="저장구간 종료 OUT">
+          <div id="svTrimInBadge">IN ▶▶</div><div id="svTrimOutBadge">◀◀ OUT</div>
+        </div>
+        <div class="svTrimRangeTimes"><span>0.00s</span><span id="svTrimSelectedTime">저장 0.00s</span><span id="svTrimEndTime">0.00s</span></div>
+      </div>
+      <input id="svTrimPlayhead" type="range" min="0" max="1000" value="0" step="1" style="display:none">
+      <span id="svTrimPlayTime" style="display:none">0.00s</span>
+      <div class="svTrimRow">
+        <label>B 동기화</label>
+        <span style="font-size:11px;color:#a9b7ae">A 기준 B 영상 미세보정</span>
+        <div id="svOffsetBox">
+          <button id="svBMinus" type="button">◀1F</button>
+          <span id="svBOffset">0.000s</span>
+          <button id="svBPlus" type="button">1F▶</button>
+        </div>
+      </div>
+      <div id="svTrimActionsFinal">
+        <span id="svTrimStatus">A/B 동일 IN·OUT · B는 OFFSET 반영</span>
+        <button id="svTrimPauseFinal" type="button">⏸ 일시정지</button>
+        <button id="svTrimPreviewFinal" type="button">▶ 선택구간 미리보기</button>
+        <button id="svTrimCancelFinal" type="button">취소</button>
+        <button id="svTrimSaveFinal" type="button">구간저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="sv-auto-off-mirror-manual-ab-trim-final">
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const F={recording:false,bOffset:0,inP:0,outP:1000,previewTimer:null,saving:false,manualStartedAt:0,manualDuration:0,maxRecTimer:null};
+const MANUAL_REC_MAX_MS=180000;
+const FRAME=1/60;
+
+window.svAutoCaptureEnabled=function(){
+  try{return !!(state.A.auto && state.B.auto)}catch(e){return false}
+};
+
+function connectedSides(){
+  try{return ['A','B'].filter(x=>!!state?.[x]?.stream)}catch(e){return []}
+}
+function forceMirrorView(){
+  connectedSides().forEach(side=>{
+    try{
+      const r=$('replay'+side); if(r)r.pause();
+      showLive(side);
+    }catch(e){}
+  });
+  try{showReadyCenter(false)}catch(e){}
+  try{setPoseHeaderState('LIVE · MIRROR')}catch(e){}
+}
+function cancelAutomaticPending(){
+  try{if(typeof v56CancelReplay==='function')v56CancelReplay()}catch(e){}
+  try{v54RecordStarted=false}catch(e){}
+  try{
+    ['A','B'].forEach(side=>{
+      if(typeof vR8Motion!=='undefined'&&vR8Motion[side]){
+        vR8Motion[side].prev=null;vR8Motion[side].stableSince=0;vR8Motion[side].ready=false;
+      }
+      if(state?.[side]){
+        state[side].poseAutoReplay=false;
+        state[side].sensorReplayHold=false;
+      }
+    });
+  }catch(e){}
+}
+
+/* 자동촬영 OFF = 거울모드 / ON = 자동 감지·녹화·리플레이 */
+window.toggleAutoBothSV95=function(){
+  const next=!svAutoCaptureEnabled();
+  ['A','B'].forEach(side=>{try{state[side].auto=next}catch(e){}});
+  if(!next){
+    cancelAutomaticPending();
+    forceMirrorView();
+  }else{
+    connectedSides().forEach(side=>{
+      try{
+        if(typeof ensureMotionPose==='function')ensureMotionPose(side);
+      }catch(e){}
+    });
+    try{setMotionSignal()}catch(e){}
+  }
+  try{syncAutoBothSV95()}catch(e){}
+  try{toast(next?'자동촬영 ON · 동작감지 시작':'자동촬영 OFF · 거울모드')}catch(e){}
+};
+
+/* 기존 LIVE 자리의 녹화 버튼 하나로 시작/종료 */
+window.manualRecToggleSV=function(){
+  if(F.recording){
+    if(F.maxRecTimer){clearTimeout(F.maxRecTimer);F.maxRecTimer=null;}
+    F.manualDuration=Math.min(180,Math.max(0,(performance.now()-F.manualStartedAt)/1000));
+    connectedSides().forEach(side=>{try{state[side]._manualDuration=F.manualDuration}catch(e){}});
+    try{manualRecStop()}catch(e){console.error(e)}
+    F.recording=false;
+    const b=$('liveMain'); if(b){b.textContent='녹화';b.classList.remove('sv-rec-active')}
+    waitManualBlobsAndOpen();
+    return;
+  }
+  if(svAutoCaptureEnabled()){
+    ['A','B'].forEach(side=>{try{state[side].auto=false}catch(e){}});
+    cancelAutomaticPending();forceMirrorView();
+    try{syncAutoBothSV95()}catch(e){}
+  }
+  try{
+    F.manualStartedAt=performance.now();F.manualDuration=0;
+    connectedSides().forEach(side=>{try{state[side]._manualDuration=0}catch(e){}});
+    manualRecStart();
+    F.recording=true;
+    const b=$('liveMain'); if(b){b.textContent='녹화종료';b.classList.add('sv-rec-active')}
+    if(F.maxRecTimer)clearTimeout(F.maxRecTimer);
+    F.maxRecTimer=setTimeout(()=>{
+      F.maxRecTimer=null;
+      if(!F.recording)return;
+      try{toast('수동녹화 3분 도달 · 자동 종료')}catch(e){}
+      manualRecToggleSV();
+    },MANUAL_REC_MAX_MS);
+  }catch(e){console.error(e);try{toast('수동녹화 시작 실패')}catch(_){}}
+};
+
+function waitManualBlobsAndOpen(){
+  const sides=connectedSides();
+  let tries=0;
+  const t=setInterval(()=>{
+    tries++;
+    const ready=sides.length && sides.every(side=>!!state?.[side]?.lastBlob);
+    if(ready||tries>40){
+      clearInterval(t);
+      if(ready)openTrimModal();
+      else try{toast('녹화 영상 생성 확인 실패')}catch(e){}
+    }
+  },100);
+}
+
+function dur(side){
+  const v=$('svTrimVideo'+side);
+  const vd=Number(v?.duration);
+  if(Number.isFinite(vd)&&vd>0)return vd;
+  const main=$('replay'+side),md=Number(main?.duration);
+  if(Number.isFinite(md)&&md>0)return md;
+  const measured=Number(state?.[side]?._manualDuration||F.manualDuration||0);
+  return Number.isFinite(measured)&&measured>0?measured:0;
+}
+function commonDuration(){
+  const vals=connectedSides().map(dur).filter(x=>x>0);
+  if(!vals.length)return 0;
+  /* B offset 적용 후 양쪽에서 공통으로 안전하게 쓸 수 있는 길이 */
+  const a=dur('A')||Infinity,b=dur('B')||Infinity;
+  if(a!==Infinity&&b!==Infinity){
+    const bUsable=Math.max(0,b-Math.max(0,F.bOffset));
+    const aUsable=Math.max(0,a-Math.max(0,-F.bOffset));
+    return Math.min(aUsable,bUsable);
+  }
+  return Math.min(...vals);
+}
+function sideTime(side,commonT){
+  if(side==='B')return Math.max(0,Math.min(dur('B'),commonT+F.bOffset));
+  return Math.max(0,Math.min(dur('A'),commonT));
+}
+function setBothAt(commonT){
+  connectedSides().forEach(side=>{
+    const v=$('svTrimVideo'+side);
+    if(v&&dur(side))try{v.currentTime=sideTime(side,commonT)}catch(e){}
+  });
+}
+function updateTrimText(){
+  const d=commonDuration();
+  const inT=d*F.inP/1000,outT=d*F.outP/1000;
+  const inTime=$('svTrimInTime'),outTime=$('svTrimOutTime');
+  if(inTime)inTime.textContent=inT.toFixed(2)+'s';
+  if(outTime)outTime.textContent=outT.toFixed(2)+'s';
+  const saved=$('svTrimSavedRange'),inBadge=$('svTrimInBadge'),outBadge=$('svTrimOutBadge');
+  if(saved){saved.style.left=F.inP/10+'%';saved.style.width=(F.outP-F.inP)/10+'%'}
+  if(inBadge)inBadge.style.left=F.inP/10+'%'; if(outBadge)outBadge.style.left=F.outP/10+'%';
+  const sel=$('svTrimSelectedTime'),end=$('svTrimEndTime');
+  if(sel)sel.textContent='저장 '+Math.max(0,outT-inT).toFixed(2)+'s'; if(end)end.textContent=d.toFixed(2)+'s';
+  $('svBOffset').textContent=(F.bOffset>=0?'+':'')+F.bOffset.toFixed(3)+'s';
+  const p=Number($('svTrimPlayhead').value||0);
+  $('svTrimPlayTime').textContent=(d*p/1000).toFixed(2)+'s'; const pm=$('svTrimPlayMarker');if(pm)pm.style.left=(p/10)+'%';
+}
+function openTrimModal(){
+  F.inP=0;F.outP=1000;F.bOffset=0;
+  const sides=connectedSides().filter(side=>!!state?.[side]?.lastBlob);
+  if(!sides.length){try{toast('편집할 녹화 영상이 없습니다.')}catch(e){};return}
+  ['A','B'].forEach(side=>{
+    const pane=$('svTrimVideo'+side)?.closest('.svTrimPane');
+    if(pane)pane.style.display=sides.includes(side)?'block':'none';
+    const v=$('svTrimVideo'+side);
+    if(v&&sides.includes(side)){
+      v.pause();v.muted=true;v.playsInline=true;
+      v.src=state[side].url;v.load();
+      const refresh=()=>{setBothAt(0);updateTrimText()};
+      v.addEventListener('loadedmetadata',refresh,{once:true});
+      v.addEventListener('loadeddata',refresh,{once:true});
+      v.addEventListener('durationchange',refresh,{once:true});
+    }
+  });
+  $('svTrimInFinal').value=0;$('svTrimOutFinal').value=1000;$('svTrimPlayhead').value=0;
+  $('svTrimModal').classList.add('open');$('svTrimModal').setAttribute('aria-hidden','false');
+  setTimeout(()=>{setBothAt(0);updateTrimText()},120);
+  setTimeout(()=>{setBothAt(0);updateTrimText()},500);
+}
+function closeTrimModal(){
+  if(F.previewTimer)clearTimeout(F.previewTimer);
+  connectedSides().forEach(side=>{try{$('svTrimVideo'+side)?.pause()}catch(e){}});
+  $('svTrimModal').classList.remove('open');$('svTrimModal').setAttribute('aria-hidden','true');
+}
+function adjustOffset(delta){
+  F.bOffset=Math.max(-0.75,Math.min(0.75,F.bOffset+delta));
+  const d=commonDuration(),p=Number($('svTrimPlayhead').value||0);
+  setBothAt(d*p/1000);updateTrimText();
+}
+function pauseSelection(){
+  if(F.previewTimer){clearTimeout(F.previewTimer);F.previewTimer=null;}
+  connectedSides().forEach(side=>{try{$('svTrimVideo'+side)?.pause()}catch(e){}});
+  $('svTrimStatus').textContent='일시정지 · 현재 재생위치에서 확인';
+  updateTrimText();
+}
+function syncPlayheadFromVideo(){
+  const d=commonDuration();if(!d)return;
+  const v=$('svTrimVideoA')||$('svTrimVideoB');if(!v)return;
+  const t=Math.max(0,Math.min(d,Number(v.currentTime)||0));
+  const p=Math.round(t/d*1000);
+  $('svTrimPlayhead').value=p;updateTrimText();
+}
+function previewSelection(){
+  const d=commonDuration();
+  if(!d){$('svTrimStatus').textContent='영상 길이 확인 중…';updateTrimText();return}
+  const st=d*F.inP/1000,en=d*F.outP/1000;
+  setBothAt(st); $('svTrimPlayhead').value=F.inP; updateTrimText();
+  const plays=[];
+  connectedSides().forEach(side=>{
+    const v=$('svTrimVideo'+side);
+    if(v){
+      try{v.pause();v.muted=true;v.playbackRate=1;if(v.ended)v.currentTime=sideTime(side,st)}catch(e){}
+      try{const p=v.play();if(p&&typeof p.catch==='function')plays.push(p.catch(()=>null))}catch(e){}
+    }
+  });
+  $('svTrimStatus').textContent='A/B 선택구간 미리보기';
+  if(F.previewTimer)clearTimeout(F.previewTimer);
+  F.previewTimer=setTimeout(()=>{
+    connectedSides().forEach(side=>$('svTrimVideo'+side)?.pause());
+    $('svTrimPlayhead').value=F.outP; updateTrimText();
+    $('svTrimStatus').textContent='A/B 동일 IN·OUT · B는 OFFSET 반영';
+  },Math.max(50,(en-st)*1000));
+}
+async function rerecord(side,st,en){
+  const v=$('svTrimVideo'+side);
+  if(!v||!state?.[side]?.lastBlob)throw new Error(side+' 영상 없음');
+  const sst=sideTime(side,st),sen=sideTime(side,en);
+  if(sen-sst<0.15)throw new Error(side+' 선택구간이 너무 짧습니다.');
+  const cap=v.captureStream?.bind(v)||v.mozCaptureStream?.bind(v);
+  if(!cap)throw new Error('Chrome captureStream 미지원');
+  v.pause();v.currentTime=sst;
+  await new Promise(res=>{if(v.readyState>=2)return res();const f=()=>{v.removeEventListener('seeked',f);res()};v.addEventListener('seeked',f);setTimeout(f,700)});
+  const stream=cap(),chunks=[];let mime='';
+  for(const m of ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'])if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+  const mr=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+  mr.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  const done=new Promise((res,rej)=>{
+    mr.onstop=()=>chunks.length?res(new Blob(chunks,{type:mr.mimeType||'video/webm'})):rej(new Error(side+' trim blob empty'));
+    mr.onerror=e=>rej(e.error||e);
+  });
+  mr.start(100);await v.play();
+  await new Promise(res=>setTimeout(res,(sen-sst)*1000));
+  v.pause();if(mr.state==='recording')mr.stop();
+  return await done;
+}
+async function saveTrimmed(){
+  if(F.saving)return;
+  const sides=connectedSides().filter(side=>!!state?.[side]?.lastBlob);
+  const d=commonDuration(),st=d*F.inP/1000,en=d*F.outP/1000;
+  if(!d||en-st<0.15){try{toast('저장 구간을 다시 지정하세요.')}catch(e){};return}
+  F.saving=true;$('svTrimSaveFinal').disabled=true;$('svTrimStatus').textContent='선택구간 생성 중…';
+  try{
+    const blobs=await Promise.all(sides.map(side=>rerecord(side,st,en)));
+    sides.forEach((side,i)=>{
+      const ss=state[side],old=ss.url;
+      ss.lastBlob=blobs[i];ss.url=URL.createObjectURL(blobs[i]);
+      const r=$('replay'+side);if(r){r.pause();r.src=ss.url;r.load()}
+      if(old&&old!==ss.url)try{URL.revokeObjectURL(old)}catch(e){}
+    });
+    /* 회원 SV 폴더 저장 */
+    for(const side of sides)await saveLast(side);
+    closeTrimModal();
+    /* 저장 결과를 즉시 SV A/B REPLAY 화면에 표시 */
+    sides.forEach(side=>{
+      try{
+        state[side].sensorReplayHold=false;
+        showReplay(side,false);
+        const r=$('replay'+side);if(r){r.currentTime=0;r.pause()}
+      }catch(e){}
+    });
+    /* 구간저장 후 A+B 동시재생 버튼은 반드시 다시 표시 */
+    try{
+      const ab=$('abSyncPlay');
+      if(ab){ab.classList.remove('manual-hidden');ab.style.display='block';}
+    }catch(e){}
+    try{toast('구간저장 완료 · 회원 SV폴더 저장 + A/B REPLAY 표시')}catch(e){}
+  }catch(e){
+    console.error('AB TRIM FINAL',e);
+    $('svTrimStatus').textContent='실패 · '+(e.message||e);
+    try{toast('구간편집 실패 · '+(e.message||e))}catch(_){}
+  }finally{
+    F.saving=false;$('svTrimSaveFinal').disabled=false;
+  }
+}
+
+addEventListener('DOMContentLoaded',()=>{
+  /* 중복 수동 UI는 숨기고 기존 좌표의 LIVE 버튼만 녹화로 사용 */
+  const b=$('liveMain');if(b){b.textContent='녹화';b.setAttribute('aria-label','A/B 수동 녹화')}
+  try{
+    if(!svAutoCaptureEnabled())forceMirrorView();
+    syncAutoBothSV95();
+  }catch(e){}
+
+  $('svTrimClose').onclick=closeTrimModal;
+  $('svTrimCancelFinal').onclick=closeTrimModal;
+  $('svBMinus').onclick=()=>adjustOffset(-FRAME);
+  $('svBPlus').onclick=()=>adjustOffset(FRAME);
+  $('svTrimPauseFinal').onclick=pauseSelection;
+  $('svTrimPreviewFinal').onclick=previewSelection;
+  $('svTrimSaveFinal').onclick=saveTrimmed;
+
+  $('svTrimInFinal').oninput=e=>{
+    F.inP=Math.min(Number(e.target.value),F.outP-5);e.target.value=F.inP;updateTrimText();
+  };
+  $('svTrimOutFinal').oninput=e=>{
+    F.outP=Math.max(Number(e.target.value),F.inP+5);e.target.value=F.outP;updateTrimText();
+  };
+  $('svTrimPlayhead').oninput=e=>{
+    const d=commonDuration(),p=Number(e.target.value||0);
+    setBothAt(d*p/1000);updateTrimText();
+  };
+  ['svTrimVideoA','svTrimVideoB'].forEach(id=>{
+    $(id).addEventListener('loadedmetadata',updateTrimText);
+    $(id).addEventListener('timeupdate',syncPlayheadFromVideo);
+  });
+});
+})();
+</script>
+
+
+<style id="sv-manual-button-final-restore">
+/* 버튼 보완: 자동촬영 원래 폭 유지 + 녹화/종료 가독성 확대 */
+#autoOn,#autoOn.manual-split{width:171px!important;left:29px!important;}
+#liveMain,#liveExit{font-size:15px!important;font-weight:900!important;line-height:1!important;}
+</style>
 </body>
 </html>
