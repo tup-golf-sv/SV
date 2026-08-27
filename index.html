@@ -4109,29 +4109,85 @@ window.toggleAutoBothSV95=function(){
   try{toast(next?'자동촬영 ON · 동작감지 시작':'자동촬영 OFF · 거울모드')}catch(e){}
 };
 
-/* 기존 LIVE 자리의 녹화 버튼 하나로 시작/종료 */
+/* 기존 LIVE 자리의 녹화 버튼 하나로 시작/종료
+   실측 보완:
+   1) 이전 REPLAY가 보이거나 재생 중이어도 [녹화]를 누르면 A/B REPLAY를 즉시 정지
+   2) A/B를 LIVE로 복귀시킨 다음 새 수동녹화를 시작
+   3) 녹화종료/구간저장 후 버튼은 반드시 '녹화' 정상상태로 복원 */
+function setManualRecordButtonReady(){
+  F.recording=false;
+  if(F.maxRecTimer){clearTimeout(F.maxRecTimer);F.maxRecTimer=null;}
+  const b=$('liveMain');
+  if(b){
+    b.textContent='녹화';
+    b.classList.remove('sv-rec-active');
+    b.setAttribute('aria-label','A/B 수동 녹화');
+  }
+}
+function stopReplayAndReturnLiveForManualRecord(){
+  connectedSides().forEach(side=>{
+    try{
+      const r=$('replay'+side);
+      if(r){
+        r.pause();
+        r.loop=false;
+        r.onended=null;
+      }
+    }catch(e){}
+    try{
+      if(state?.[side]) state[side].sensorReplayHold=false;
+    }catch(e){}
+    try{
+      showLive(side);
+    }catch(e){
+      try{v70ShowLive(side)}catch(_){}
+    }
+  });
+  try{
+    const ab=$('abSyncPlay');
+    if(ab){ab.classList.remove('manual-hidden');ab.style.display='block';}
+  }catch(e){}
+}
 window.manualRecToggleSV=function(){
   if(F.recording){
     if(F.maxRecTimer){clearTimeout(F.maxRecTimer);F.maxRecTimer=null;}
     F.manualDuration=Math.min(180,Math.max(0,(performance.now()-F.manualStartedAt)/1000));
     connectedSides().forEach(side=>{try{state[side]._manualDuration=F.manualDuration}catch(e){}});
     try{manualRecStop()}catch(e){console.error(e)}
-    F.recording=false;
-    const b=$('liveMain'); if(b){b.textContent='녹화';b.classList.remove('sv-rec-active')}
+    setManualRecordButtonReady();
     waitManualBlobsAndOpen();
     return;
   }
+
+  /* 새 녹화를 누르는 순간 기존 저장/리플레이 영상을 먼저 확실히 정지하고 LIVE로 복귀 */
+  stopReplayAndReturnLiveForManualRecord();
+
   if(svAutoCaptureEnabled()){
     ['A','B'].forEach(side=>{try{state[side].auto=false}catch(e){}});
-    cancelAutomaticPending();forceMirrorView();
+    cancelAutomaticPending();
     try{syncAutoBothSV95()}catch(e){}
   }
+
   try{
+    const recSides=connectedSides();
+    if(!recSides.length){
+      setManualRecordButtonReady();
+      try{toast('A/B 카메라를 먼저 연결하세요.')}catch(e){}
+      return;
+    }
+
     F.manualStartedAt=performance.now();F.manualDuration=0;
-    connectedSides().forEach(side=>{try{state[side]._manualDuration=0}catch(e){}});
+    recSides.forEach(side=>{try{state[side]._manualDuration=0}catch(e){}});
     manualRecStart();
+
     F.recording=true;
-    const b=$('liveMain'); if(b){b.textContent='녹화종료';b.classList.add('sv-rec-active')}
+    const b=$('liveMain');
+    if(b){
+      b.textContent='녹화종료';
+      b.classList.add('sv-rec-active');
+      b.setAttribute('aria-label','A/B 수동 녹화 종료');
+    }
+
     if(F.maxRecTimer)clearTimeout(F.maxRecTimer);
     F.maxRecTimer=setTimeout(()=>{
       F.maxRecTimer=null;
@@ -4139,7 +4195,11 @@ window.manualRecToggleSV=function(){
       try{toast('수동녹화 3분 도달 · 자동 종료')}catch(e){}
       manualRecToggleSV();
     },MANUAL_REC_MAX_MS);
-  }catch(e){console.error(e);try{toast('수동녹화 시작 실패')}catch(_){}}
+  }catch(e){
+    console.error(e);
+    setManualRecordButtonReady();
+    try{toast('수동녹화 시작 실패')}catch(_){}
+  }
 };
 
 function waitManualBlobsAndOpen(){
@@ -4320,6 +4380,15 @@ async function saveTrimmed(){
       const ab=$('abSyncPlay');
       if(ab){ab.classList.remove('manual-hidden');ab.style.display='block';}
     }catch(e){}
+
+    /* 핵심 상태 복구:
+       저장된 A/B REPLAY는 화면에 그대로 남기되,
+       좌측 버튼 상태는 녹화 전 정상상태 '녹화 + 종료'로 복귀한다.
+       다음 [녹화] 클릭 시 위 stopReplayAndReturnLiveForManualRecord()가
+       기존 REPLAY를 정지하고 LIVE로 전환한 뒤 새 녹화를 시작한다. */
+    try{setManualRecordButtonReady()}catch(e){}
+    try{setNormalControls('idle')}catch(e){}
+
     try{toast('구간저장 완료 · 회원 SV폴더 저장 + A/B REPLAY 표시')}catch(e){}
   }catch(e){
     console.error('AB TRIM FINAL',e);
@@ -4332,7 +4401,9 @@ async function saveTrimmed(){
 
 addEventListener('DOMContentLoaded',()=>{
   /* 중복 수동 UI는 숨기고 기존 좌표의 LIVE 버튼만 녹화로 사용 */
-  const b=$('liveMain');if(b){b.textContent='녹화';b.setAttribute('aria-label','A/B 수동 녹화')}
+  try{setManualRecordButtonReady()}catch(e){
+    const b=$('liveMain');if(b){b.textContent='녹화';b.setAttribute('aria-label','A/B 수동 녹화')}
+  }
   try{
     if(!svAutoCaptureEnabled())forceMirrorView();
     syncAutoBothSV95();
