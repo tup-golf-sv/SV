@@ -1891,7 +1891,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 
   <div id="abSyncAreaCleanMask" aria-hidden="true"></div>
   <div id="rotate90TextErase" aria-hidden="true"></div>
-  <button id="abSyncPlay" type="button" onclick="playABFromZero()" aria-label="A+B 0초 동시재생">▶ A+B 동시재생</button>
+  <button id="abSyncPlay" type="button" onclick="toggleABSyncPlay()" aria-label="A+B 동시재생/동시정지">▶ A+B 동시재생</button>
 
   <div id="seekEraseA" class="seek-erase-v99" aria-hidden="true"></div>
   <div id="seekEraseB" class="seek-erase-v99" aria-hidden="true"></div>
@@ -2973,6 +2973,48 @@ function svResolveReplaySource(side){
   return sourceUrl;
 }
 
+
+let svABSyncPlaying=false;
+
+function setABSyncButtonPlaying(on){
+  svABSyncPlaying=!!on;
+  const b=document.getElementById('abSyncPlay');
+  if(!b)return;
+  b.textContent=on?'⏸ A+B 동시정지':'▶ A+B 동시재생';
+  b.setAttribute('aria-label',on?'A+B 동시정지':'A+B 0초 동시재생');
+}
+
+function stopABSyncPlay(){
+  ['A','B'].forEach(side=>{
+    const r=document.getElementById('replay'+side);
+    if(!r)return;
+    try{r.pause()}catch(e){}
+    r.loop=false;
+    r.onended=null;
+    try{
+      if(state && state[side]) state[side].sensorReplayHold=false;
+    }catch(e){}
+  });
+  setABSyncButtonPlaying(false);
+  try{toast('A+B 동시정지')}catch(e){}
+}
+
+function toggleABSyncPlay(){
+  /* 실제 재생 상태도 같이 확인해서 버튼 상태가 어긋나도 복구 */
+  const a=document.getElementById('replayA');
+  const b=document.getElementById('replayB');
+  const actuallyPlaying=!!(
+    (a && !a.paused && !a.ended) ||
+    (b && !b.paused && !b.ended)
+  );
+
+  if(svABSyncPlaying || actuallyPlaying){
+    stopABSyncPlay();
+    return;
+  }
+  playABFromZero();
+}
+
 async function playABFromZero(){
   const sides=['A','B'];
   const items={};
@@ -3062,6 +3104,7 @@ async function playABFromZero(){
         st.url=st._manualSyncUrl;
       }
     });
+    setABSyncButtonPlaying(false);
     try{toast('A/B 영상 로딩 실패 · 각 카메라 영상을 다시 1회 촬영하세요.')}catch(e){}
     return;
   }
@@ -3088,6 +3131,7 @@ async function playABFromZero(){
     const r=items[side].replay;
     try{return r.play()}catch(e){return Promise.reject(e)}
   }));
+  setABSyncButtonPlaying(true);
 
   // Chromium may reject one side transiently. Retry only the paused side.
   await new Promise(resolve=>setTimeout(resolve,80));
@@ -4128,21 +4172,44 @@ function stopReplayAndReturnLiveForManualRecord(){
   connectedSides().forEach(side=>{
     try{
       const r=$('replay'+side);
+      const live=$('live'+side);
+      const mode=$('mode'+side);
+      const camState=$('camState'+side);
+
       if(r){
         r.pause();
         r.loop=false;
         r.onended=null;
+        /* A+B 동시재생이 display:block !important를 걸기 때문에
+           일반 style.display='none'만으로는 REPLAY가 사라지지 않는다. */
+        r.style.removeProperty('display');
+        r.style.setProperty('display','none','important');
+        r.style.visibility='hidden';
+        r.style.opacity='0';
+      }
+
+      if(live){
+        live.style.removeProperty('display');
+        live.style.setProperty('display','block','important');
+        live.style.visibility='visible';
+        live.style.opacity='1';
+      }
+
+      if(mode) mode.textContent=side+' · LIVE';
+      if(camState) camState.textContent='연결됨';
+      try{v71ApplyLiveRotation(side)}catch(e){}
+    }catch(e){}
+
+    try{
+      if(state?.[side]){
+        state[side].sensorReplayHold=false;
+        state[side].poseCapture=true;
       }
     }catch(e){}
-    try{
-      if(state?.[side]) state[side].sensorReplayHold=false;
-    }catch(e){}
-    try{
-      showLive(side);
-    }catch(e){
-      try{v70ShowLive(side)}catch(_){}
-    }
   });
+
+  /* A+B 동시재생 버튼도 정지/대기 상태로 복귀 */
+  try{setABSyncButtonPlaying(false)}catch(e){}
   try{
     const ab=$('abSyncPlay');
     if(ab){ab.classList.remove('manual-hidden');ab.style.display='block';}
@@ -4379,6 +4446,7 @@ async function saveTrimmed(){
     try{
       const ab=$('abSyncPlay');
       if(ab){ab.classList.remove('manual-hidden');ab.style.display='block';}
+      setABSyncButtonPlaying(false);
     }catch(e){}
 
     /* 핵심 상태 복구:
