@@ -1114,6 +1114,19 @@ function startClip(side){
  };
 
  recorder.onstop=()=>{
+   /* V63 STRICT SWING GUARD:
+      A READY candidate may start background recording, but an unconfirmed motion
+      must NEVER replace the last valid swing replay. Abort marks this recorder
+      for discard before stop(); onstop then drops the temporary chunks only. */
+   if(s._discardAutoCapture){
+     s._discardAutoCapture=false;
+     s.poseAutoReplay=false;
+     s.poseCapture=false;
+     s.sensorReplayHold=false;
+     s.manualCapture=false;
+     s._sensorBatchId=0;
+     return;
+   }
    if(!recordingChunks.length){
      s.poseAutoReplay=false;
      s.poseCapture=false;
@@ -1930,7 +1943,7 @@ let readyAudioCtx=null;
 let poseEngines={A:null,B:null}, poseEnabled={A:false,B:false}, poseRunning={A:false,B:false};
 let jointVisible={A:true,B:false};
 // R7 A/B MOTION: B has an independent lightweight motion state; A keeps the proven V107 detector.
-let vR7B={prev:null,prevAt:0,stableSince:0,ready:false,lastSwingAt:0};
+let vR7B={prev:null,prevAt:0,stableSince:0,ready:false,lastSwingAt:0,phase:'WAIT_ADDRESS',address:null,peak:0,peakAt:0,swingAt:0};
 let vR7LastMotionSide='', vR7LastMotionAt=0;
 function vR7ConnectedSides(){return ['A','B'].filter(x=>!!(state&&state[x]&&state[x].stream))}
 function setMotionSignal(text){
@@ -1988,18 +2001,14 @@ function vR8Diff(prev,cur){
 }
 
 function vR8Trigger(side,now,metric){
-  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
+  /* V63 STRICT SWING GUARD:
+     Frame-difference is NOT a golf-address classifier.
+     Keep it only as a motion measurement helper; it must never create READY,
+     start recording, or schedule replay by itself. */
   const m=vR8Motion[side];
-  if(now-m.lastTrigger<1800 || now-vR8GlobalTriggerAt<900)return;
+  if(!m)return;
   m.lastTrigger=now;
-  vR8GlobalTriggerAt=now;
-  m.ready=false;
-  m.stableSince=0;
-  vR7LastMotionSide=side;
-  vR7LastMotionAt=now;
-  setMotionSignal('MOTION · '+side+' DETECT');
-  // Recording already began at READY. Finish after follow-through and replay.
-  if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+  m.lastMetric=metric||null;
 }
 
 function ensureFrameMotionDetector(side){
@@ -2016,25 +2025,12 @@ function ensureFrameMotionDetector(side){
         if(m.prev){
           const q=vR8Diff(m.prev,cur);
           const now=performance.now();
-          // Quiet camera -> READY. Thresholds tolerate normal webcam sensor noise.
-          const quiet=(q.mean<3.4 && q.hot<0.022);
-          // Golf swing-sized movement. Either broad motion or a strong local change triggers.
-          const swing=(q.mean>7.0 || q.hot>0.090);
-          if(!m.ready){
-            if(quiet){
-              if(!m.stableSince)m.stableSince=now;
-              if(now-m.stableSince>=650){
-                m.ready=true;
-                v54StartReplayRecord();
-                const sides=vR7ConnectedSides();
-                setMotionSignal(sides.length===2?'MOTION · A+B READY':'MOTION · '+side+' READY');
-              }
-            }else{
-              m.stableSince=0;
-            }
-          }else if(swing){
-            vR8Trigger(side,now,q);
-          }
+          /* V63 STRICT SWING GUARD:
+             Do not infer READY from a quiet frame. Standing still, lesson gestures,
+             or a one-leg stance can all satisfy a frame-difference threshold.
+             R8 now records only diagnostics; POSE joint sequence owns READY/SHOT. */
+          m.lastMetric=q;
+          m.lastMetricAt=now;
         }
         m.prev=cur;
       }
@@ -2085,6 +2081,90 @@ let v60MicStream=null, v60AudioCtx=null, v60Analyser=null, v60MicLoop=null;
 let v60AudioArmed=false, v60IgnoreAudioUntil=0, v60LastHitAt=0, v60RecentAudioHit=0;
 let v61SwingPending=false, v61SwingPendingAt=0, v61ShotConfirmed=false;
 
+/* ===== V63 STRICT GOLF-SWING SEQUENCE =====
+   Purpose: reject ordinary standing / one-leg stance / lesson gestures.
+   We use normalized 2D joint changes, not raw pixels:
+   ADDRESS -> TAKEAWAY/BACKSWING -> direction reversal -> DOWNSWING -> SHOT.
+   A valid old replay remains on screen until SHOT is kinematically confirmed. */
+let v63AddressSnap=null;
+let v63BackswingPeak=0;
+let v63BackswingPeakAt=0;
+let v63TakeawayAt=0;
+
+function v63PoseSnap(lm){
+  if(!lm)return null;
+  const ls=v53Point(lm,11,.20), rs=v53Point(lm,12,.20);
+  const lh=v53Point(lm,23,.20), rh=v53Point(lm,24,.20);
+  const lw=v53Point(lm,15,.18), rw=v53Point(lm,16,.18);
+  if(!ls||!rs||!lh||!rh||!lw||!rw)return null;
+  const shoulder={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
+  const hip={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
+  const hand={x:(lw.x+rw.x)/2,y:(lw.y+rw.y)/2};
+  const torso=Math.max(.001,v53Dist(shoulder,hip));
+  const shoulderAngle=Math.atan2(rs.y-ls.y,rs.x-ls.x);
+  return {shoulder,hip,hand,torso,shoulderAngle};
+}
+function v63AngleDelta(a,b){
+  let d=Math.abs(a-b);
+  if(d>Math.PI)d=2*Math.PI-d;
+  return d;
+}
+function v63FromAddress(lm,base){
+  const cur=v63PoseSnap(lm);
+  if(!cur||!base)return null;
+  const handRel={x:cur.hand.x-cur.hip.x,y:cur.hand.y-cur.hip.y};
+  const baseRel={x:base.hand.x-base.hip.x,y:base.hand.y-base.hip.y};
+  return {
+    cur,
+    handDist:v53Dist(handRel,baseRel)/Math.max(.001,base.torso),
+    shoulderDelta:v63AngleDelta(cur.shoulderAngle,base.shoulderAngle)
+  };
+}
+function v63ResetSequence(){
+  v63AddressSnap=null;
+  v63BackswingPeak=0;
+  v63BackswingPeakAt=0;
+  v63TakeawayAt=0;
+  v61SwingPending=false;
+  v61SwingPendingAt=0;
+}
+function v63ResetB(){
+  vR7B.prev=null;vR7B.prevAt=0;vR7B.stableSince=0;vR7B.ready=false;
+  vR7B.phase='WAIT_ADDRESS';vR7B.address=null;vR7B.peak=0;vR7B.peakAt=0;vR7B.swingAt=0;
+}
+function v54AbortReplayRecord(reason){
+  /* Abort only the current POSE candidate. The last confirmed replay/blob stays intact. */
+  try{if(typeof v56CancelReplay==='function')v56CancelReplay()}catch(e){}
+  const session=SV113_AB_SESSION;
+  const sides=(session&&session.source==='POSE')?session.sides.slice():vR7ConnectedSides();
+  if(session&&session.source==='POSE'){
+    session.replayStarted=true;       // invalidate any late callbacks from this candidate
+    session.expected.clear();
+    session.ready.clear();
+  }
+  sides.forEach(side=>{
+    const s=state?.[side];
+    if(!s)return;
+    s._discardAutoCapture=true;
+    s.poseAutoReplay=false;
+    s.sensorReplayHold=false;
+    const r=s.recorder;
+    if(r&&r.state==='recording'){
+      try{if(typeof r.requestData==='function')r.requestData()}catch(e){}
+      try{r.stop()}catch(e){}
+    }else{
+      s._discardAutoCapture=false;
+      s.poseCapture=false;
+      s._sensorBatchId=0;
+    }
+    const cs=document.getElementById('camState'+side);
+    if(cs)cs.textContent='연결됨';
+  });
+  v54RecordStarted=false;
+  showReadyCenter(false);
+  if(reason)console.info('V63 candidate discarded:',reason);
+}
+
 function v60GolfAddress(lm){
   if(!lm)return false;
 
@@ -2106,11 +2186,15 @@ function v60GolfAddress(lm){
   const handMid={x:(lw.x+rw.x)/2,y:(lw.y+rw.y)/2};
 
   const torsoLen=Math.max(0.001,v53Dist(shoulderMid,hipMid));
+  const shoulderWidth=Math.max(0.001,v53Dist(ls,rs));
   const feetGap=Math.abs(la.x-ra.x);
   const kneeGap=Math.abs(lk.x-rk.x);
   const handGap=v53Dist(lw,rw);
   const handBelowShoulders=(handMid.y-shoulderMid.y)/torsoLen;
   const handFromHips=Math.abs(handMid.y-hipMid.y)/torsoLen;
+  const handCenterX=Math.abs(handMid.x-hipMid.x)/shoulderWidth;
+  const gripGap=handGap/shoulderWidth;
+  const stanceRatio=feetGap/shoulderWidth;
   const hipToKnee=Math.max(0.001,v53Dist(hipMid,kneeMid));
   const kneeToAnkle=Math.max(0.001,v53Dist(kneeMid,ankleMid));
   const bodyCentered=hipMid.x>0.18 && hipMid.x<0.82;
@@ -2120,21 +2204,32 @@ function v60GolfAddress(lm){
   const ankleLevelDiff=Math.abs(la.y-ra.y);
 
   const obviousOneLeg =
-    (hipLevelDiff>0.085 && kneeLevelDiff>0.095) ||
-    (kneeLevelDiff>0.13) ||
-    (ankleLevelDiff>0.12 && hipLevelDiff>0.065);
+    (hipLevelDiff>0.070 && kneeLevelDiff>0.080) ||
+    (kneeLevelDiff>0.105) ||
+    (ankleLevelDiff>0.095 && hipLevelDiff>0.050);
 
-  let score=0;
-  if(bodyCentered)score++;
-  if(feetGap>=0.055 && feetGap<=0.38)score++;
-  if(kneeGap>=0.04 && kneeGap<=0.34)score++;
-  if(handGap<=0.24)score++;
-  if(handBelowShoulders>=0.45 && handBelowShoulders<=2.50)score++;
-  if(handFromHips<=1.55)score++;
-  if(hipToKnee>=0.13 && kneeToAnkle>=0.13)score++;
+  /* V64 FALSE-READY FIX
+     The previous 5-of-7 score was too permissive: a standing person could pass.
+     A golf address must now include the grip geometry itself:
+       - both wrists close together relative to shoulder width,
+       - grip located near the body's center line,
+       - stance width plausible relative to shoulder width.
+     These are mandatory gates, not optional score points.
+     Existing backswing/downswing/shot thresholds are intentionally unchanged. */
+  const gripLocked=(gripGap<=0.58 && handCenterX<=0.52);
+  const stanceLocked=(stanceRatio>=0.58 && stanceRatio<=2.05);
+  const handsInAddressZone=(handBelowShoulders>=0.72 && handBelowShoulders<=2.35 && handFromHips<=1.25);
+  const legsVisibleStable=(hipToKnee>=0.13 && kneeToAnkle>=0.13);
 
-  // Same reference rule: 5 of 7 and not an obvious one-leg stance.
-  return score>=5 && !obviousOneLeg;
+  return !!(
+    bodyCentered &&
+    gripLocked &&
+    stanceLocked &&
+    handsInAddressZone &&
+    legsVisibleStable &&
+    kneeGap>=0.04 && kneeGap<=0.34 &&
+    !obviousOneLeg
+  );
 }
 
 async function v60EnsureMic(){
@@ -2236,7 +2331,8 @@ function v60ConfirmShotFromAudio(){
       payload:{soundConfirmed:true}
     });
 
-  // Replay was already scheduled when POSE SWING was detected.
+  // V63: replay is scheduled only after a real SHOT confirmation.
+  if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
 
   setTimeout(()=>{
     shotPhase='WAIT_ADDRESS';
@@ -2314,7 +2410,7 @@ function v56ScheduleReplay(){
   v56ReplayPending=true;
   if(v56ReplayTimer)clearTimeout(v56ReplayTimer);
 
-  // SWING detected -> keep finish through impact/finish, then replay regardless of SHOT classifier.
+  // V63: called only after SHOT confirmation; keep follow-through, then reveal the new replay.
   v56ReplayTimer=setTimeout(()=>{
     v56ReplayTimer=null;
     v54FinishReplayRecord();
@@ -2565,11 +2661,21 @@ function ema(prev,cur,a=.42){return prev?{x:prev.x*(1-a)+cur.x*a,y:prev.y*(1-a)+
 function detectSwingB(l){
   if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
-  const now=performance.now();
-  if(!v54Presence(l)){
-    vR7B.prev=null;vR7B.prevAt=0;vR7B.stableSince=0;vR7B.ready=false;
+
+  /* With A connected, one physical swing must have one master classifier.
+     B still records synchronously from A's READY, but B cannot create READY/SHOT alone. */
+  if(state.A?.stream){
+    v63ResetB();
     return;
   }
+
+  const now=performance.now();
+  if(!v54Presence(l)){
+    v63ResetB();
+    if(v54RecordStarted)v54AbortReplayRecord('B BODY LOST');
+    return;
+  }
+
   const ids=[11,12,13,14,15,16,23,24];
   const pts=ids.map(i=>l[i]).filter(Boolean);
   if(pts.length<5)return;
@@ -2583,26 +2689,66 @@ function detectSwingB(l){
   const handMove=Math.hypot(hand.x-vR7B.prev.h.x,hand.y-vR7B.prev.h.y)/dt;
   vR7B.prev=snap;vR7B.prevAt=now;
 
-  // Side view READY: golfer is present and substantially still for 0.75 s.
-  if(!vR7B.ready){
-    if(bodyMove<0.055 && handMove<0.11){
+  if(vR7B.phase==='WAIT_ADDRESS'){
+    const golfAddress=v60GolfAddress(l);
+    if(golfAddress && bodyMove<0.055 && handMove<0.11){
       if(!vR7B.stableSince)vR7B.stableSince=now;
-      if(now-vR7B.stableSince>=750){
-        vR7B.ready=true;
+      if(now-vR7B.stableSince>=850){
+        vR7B.address=v63PoseSnap(l);
+        if(!vR7B.address){vR7B.stableSince=0;return;}
+        vR7B.phase='READY';vR7B.ready=true;vR7B.peak=0;
         v54StartReplayRecord();
-        if(!state.A?.stream)setMotionSignal('MOTION · B READY');
+        setMotionSignal('POSE · B ADDRESS READY');
+        showReadyCenter(true);
       }
-    }else vR7B.stableSince=0;
+    }else{
+      vR7B.stableSince=0;
+    }
     return;
   }
 
-  // Side view swing: hand acceleration is the main cue, body motion is supplemental.
-  if((handMove>0.22 || (handMove>0.15&&bodyMove>0.07)) && now-vR7B.lastSwingAt>1800){
-    vR7B.lastSwingAt=now;
-    vR7B.ready=false;vR7B.stableSince=0;
-    vR7LastMotionSide='B';vR7LastMotionAt=now;
-    setMotionSignal(state.A?.stream?'MOTION · B DETECT':'MOTION · B DETECT');
-    if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+  const k=v63FromAddress(l,vR7B.address);
+  if(!k){v54AbortReplayRecord('B POSE LOST');v63ResetB();return;}
+
+  if(vR7B.phase==='READY'){
+    const takeaway=(k.handDist>=0.18 && handMove>0.10 && (k.shoulderDelta>=0.012 || k.handDist>=0.26));
+    if(takeaway){
+      vR7B.phase='BACKSWING';vR7B.peak=k.handDist;vR7B.peakAt=now;
+      showReadyCenter(false);
+      setMotionSignal('POSE · B BACKSWING');
+    }else if(now-vR7B.stableSince>3500){
+      v54AbortReplayRecord('B READY TIMEOUT');v63ResetB();
+    }
+    return;
+  }
+
+  if(vR7B.phase==='BACKSWING'){
+    if(k.handDist>vR7B.peak){vR7B.peak=k.handDist;vR7B.peakAt=now;}
+    const reversal=(vR7B.peak>=0.30 && k.handDist<=vR7B.peak-0.07 && handMove>0.14);
+    if(reversal){
+      vR7B.phase='SWING';vR7B.swingAt=now;
+      setMotionSignal('POSE · B DOWNSWING');
+    }else if(now-vR7B.peakAt>1800){
+      v54AbortReplayRecord('B BACKSWING TIMEOUT');v63ResetB();
+    }
+    return;
+  }
+
+  if(vR7B.phase==='SWING'){
+    const elapsed=now-vR7B.swingAt;
+    const impactZone=(vR7B.peak>=0.30 &&
+      k.handDist<=Math.max(0.16,vR7B.peak*0.65) &&
+      handMove>0.16);
+    if(elapsed>90 && impactZone){
+      vR7B.lastSwingAt=now;
+      setMotionSignal('POSE · B SHOT');
+      if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+      vR7B.phase='SHOT';
+      setTimeout(()=>v63ResetB(),1400);
+    }else if(elapsed>1600){
+      v54AbortReplayRecord('B FALSE SWING');v63ResetB();
+      setPoseHeaderState('POSE · B ADDRESS 확인중');
+    }
   }
 }
 
@@ -2616,6 +2762,7 @@ function detectSwing(l,side='A'){
   if(!present){
     if(!v54MissingSince)v54MissingSince=now;
     if(now-v54MissingSince>250){
+      if(v54RecordStarted)v54AbortReplayRecord('A BODY LOST');
       stableFrames=0;
       v53AddressSince=0;
       v53AddressLocked=false;
@@ -2624,8 +2771,8 @@ function detectSwing(l,side='A'){
       v53PrevTime=0;
       v54ReadyPlayed=false;
       v60AudioArmed=false;
-      v61SwingPending=false;
       v61ShotConfirmed=false;
+      v63ResetSequence();
       if(shotPhase!=='SHOT')shotPhase='WAIT_ADDRESS';
       showReadyCenter(false);
       setPoseHeaderState('POSE · BODY 확인중');
@@ -2638,7 +2785,6 @@ function detectSwing(l,side='A'){
 
   if(shotPhase==='WAIT_ADDRESS'){
     setPoseHeaderState('POSE · ADDRESS 확인중');
-
     const golfAddress=v60GolfAddress(l);
 
     if(
@@ -2650,10 +2796,17 @@ function detectSwing(l,side='A'){
       if(!v53AddressSince)v53AddressSince=now;
 
       if(now-v53AddressSince>=850){
+        const snap=v63PoseSnap(l);
+        if(!snap){v53AddressSince=0;return;}
+
+        v63AddressSnap=snap;
+        v63BackswingPeak=0;
+        v63BackswingPeakAt=now;
+        v63TakeawayAt=0;
         v53AddressLocked=true;
         shotPhase='READY';
         v53ReadyAt=now;
-        setMotionSignal(state.B?.stream?'MOTION · A+B READY':'MOTION · A READY');
+        setMotionSignal(state.B?.stream?'POSE · A+B ADDRESS READY':'POSE · A ADDRESS READY');
         showReadyCenter(true);
 
         if(!v54ReadyPlayed){
@@ -2662,13 +2815,11 @@ function detectSwing(l,side='A'){
           v60IgnoreAudioUntil=performance.now()+550;
         }
 
-        if(v60Analyser){
-          v60AudioArmed=true;
-        }else{
-          v60EnsureMic().then(ok=>{v60AudioArmed=!!ok;});
-        }
+        if(v60Analyser)v60AudioArmed=true;
+        else v60EnsureMic().then(ok=>{v60AudioArmed=!!ok;});
 
-        // Record next swing in background while previous replay keeps looping.
+        // Background capture may begin at ADDRESS, but it is provisional.
+        // It cannot replace the previous valid replay until SHOT confirmation.
         v54StartReplayRecord();
       }
     }else{
@@ -2678,33 +2829,75 @@ function detectSwing(l,side='A'){
     return;
   }
 
-  if(shotPhase==='READY'){
-    const swingCandidate =
-      (m.handSpeed>0.11 && m.shoulderTurn>0.008) ||
-      (m.handSpeed>0.19);
+  const k=v63FromAddress(l,v63AddressSnap);
+  if(!k){
+    if(v54RecordStarted)v54AbortReplayRecord('A POSE LOST');
+    shotPhase='WAIT_ADDRESS';
+    v53AddressSince=0;v53AddressLocked=false;v54ReadyPlayed=false;
+    v63ResetSequence();showReadyCenter(false);
+    return;
+  }
 
-    if(now-v53ReadyAt>120 && swingCandidate){
-      shotPhase='SWING';
+  if(shotPhase==='READY'){
+    /* TAKEAWAY must be a normalized hand displacement from address plus
+       either shoulder participation or a clearly larger hand displacement.
+       A casual hand gesture from a standing pose cannot enter here because
+       ADDRESS was already required and R8 quiet-frame READY is disabled. */
+    const takeaway =
+      (k.handDist>=0.18 && m.handSpeed>0.085 &&
+       (k.shoulderDelta>=0.012 || k.handDist>=0.26));
+
+    if(now-v53ReadyAt>120 && takeaway){
+      shotPhase='BACKSWING';
+      v63TakeawayAt=now;
+      v63BackswingPeak=k.handDist;
+      v63BackswingPeakAt=now;
+      showReadyCenter(false);
+      setMotionSignal(state.B?.stream?'POSE · A+B BACKSWING':'POSE · A BACKSWING');
+    }else if(now-v53ReadyAt>3500){
+      v54AbortReplayRecord('A READY TIMEOUT');
+      shotPhase='WAIT_ADDRESS';
+      v53AddressSince=0;v53AddressLocked=false;v54ReadyPlayed=false;
+      v63ResetSequence();showReadyCenter(false);
+      setPoseHeaderState('POSE · ADDRESS 확인중');
+    }
+    return;
+  }
+
+  if(shotPhase==='BACKSWING'){
+    if(k.handDist>v63BackswingPeak){
+      v63BackswingPeak=k.handDist;
+      v63BackswingPeakAt=now;
+    }
+
+    /* A golf swing contains a reversal: hands move away from address,
+       reach a backswing peak, then return quickly toward address. */
+    const reversal =
+      (v63BackswingPeak>=0.30 &&
+       k.handDist<=v63BackswingPeak-0.07 &&
+       m.handSpeed>0.13);
+
+    if(reversal){
+      shotPhase='SWING'; // existing name retained; now means confirmed DOWNSWING
       swingStart=now;
       v61SwingPending=true;
       v61SwingPendingAt=now;
       v61ShotConfirmed=false;
-      showReadyCenter(false);
       vR7LastMotionSide='A';vR7LastMotionAt=now;
-      setMotionSignal(state.B?.stream?'MOTION · A DETECT':'MOTION · A DETECT');
+      setMotionSignal(state.B?.stream?'POSE · A+B DOWNSWING':'POSE · A DOWNSWING');
 
-      // V9 behavior: a valid POSE swing always produces a replay.
-      // Ball audio is supplemental SHOT confirmation and must not block replay.
-      if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
-
-      // Consume a ball-hit transient that arrived a few frames before POSE switched to SWING.
+      // A ball-hit transient can confirm immediately, but replay is not yet
+      // scheduled from movement alone.
       if(performance.now()-v60RecentAudioHit<=420){
         v60ConfirmShotFromAudio();
-        return;
+        if(v61ShotConfirmed)return;
       }
-
-      // IMPORTANT: do NOT replace replay yet.
-      // Wait for a real ball-hit sound to confirm this swing.
+    }else if(now-v63BackswingPeakAt>1800){
+      v54AbortReplayRecord('A BACKSWING TIMEOUT');
+      shotPhase='WAIT_ADDRESS';
+      v53AddressSince=0;v53AddressLocked=false;v54ReadyPlayed=false;
+      v63ResetSequence();
+      setPoseHeaderState('POSE · ADDRESS 확인중');
     }
     return;
   }
@@ -2712,12 +2905,33 @@ function detectSwing(l,side='A'){
   if(shotPhase==='SWING'){
     const elapsed=now-swingStart;
 
-    // Replay is already scheduled from the valid POSE swing.
-    // If audio is not detected, keep the replay but label it as POSE-only.
-    if(elapsed>2200 && !v61ShotConfirmed){
+    /* POSE-only SHOT confirmation:
+       - a real backswing amplitude existed,
+       - hands have returned substantially toward the address zone,
+       - downswing hand speed is still high.
+       Only here may a new replay be scheduled. */
+    const impactZone =
+      (v63BackswingPeak>=0.30 &&
+       k.handDist<=Math.max(0.16,v63BackswingPeak*0.65) &&
+       m.handSpeed>0.16);
+
+    if(elapsed>90 && impactZone && !v61ShotConfirmed){
+      v61ShotConfirmed=true;
       v61SwingPending=false;
       v60AudioArmed=false;
+      lastShotAt=now;
+      shotPhase='SHOT';
       setPoseHeaderState('POSE · SHOT');
+      if(typeof v56ScheduleReplay==='function')v56ScheduleReplay();
+
+      try{
+        if(typeof launchFlightAtImpact==='function')
+          launchFlightAtImpact('POSE',{soundConfirmed:false});
+      }catch(e){}
+      try{
+        if(typeof sensorShotDetected==='function')
+          sensorShotDetected({source:'POSE',camera:'A',timestamp:now,payload:{soundConfirmed:false}});
+      }catch(e){}
 
       setTimeout(()=>{
         shotPhase='WAIT_ADDRESS';
@@ -2728,11 +2942,32 @@ function detectSwing(l,side='A'){
         v53PrevPose=null;
         v53PrevTime=0;
         v54ReadyPlayed=false;
+        v61ShotConfirmed=false;
+        v63ResetSequence();
         setPoseHeaderState('POSE · ADDRESS 확인중');
-      },900);
+      },1400);
+      return;
+    }
+
+    if(elapsed>1600 && !v61ShotConfirmed){
+      // Not a complete golf-swing sequence: discard provisional capture.
+      v54AbortReplayRecord('A FALSE SWING');
+      shotPhase='WAIT_ADDRESS';
+      stableFrames=0;
+      v53AddressSince=0;
+      v53AddressLocked=false;
+      v53ReadyAt=0;
+      v53PrevPose=null;
+      v53PrevTime=0;
+      v54ReadyPlayed=false;
+      v60AudioArmed=false;
+      v61ShotConfirmed=false;
+      v63ResetSequence();
+      setPoseHeaderState('POSE · ADDRESS 확인중');
     }
   }
 }
+
 updateJointButtons('A',false);updateJointButtons('B',false);
 addEventListener('pointerdown',()=>{try{if(!readyAudioCtx)readyAudioCtx=new (window.AudioContext||window.webkitAudioContext)();if(readyAudioCtx.state==='suspended')readyAudioCtx.resume()}catch(e){}},{once:true});
 
@@ -4132,6 +4367,7 @@ function cancelAutomaticPending(){
       }
     });
   }catch(e){}
+  try{v63ResetSequence();v63ResetB();}catch(e){}
 }
 
 /* 자동촬영 OFF = 거울모드 / ON = 자동 감지·녹화·리플레이 */
