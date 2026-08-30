@@ -1819,9 +1819,82 @@ window.addEventListener('DOMContentLoaded',()=>{
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <!-- PATCH: MANUAL_DURATION_PRESERVE + TRIM_DURATION_FALLBACK + BUTTON_RESTORE -->
+
+
+<style id="sv-drawing-overlay-v1-css">
+/* ===== SV DRAWING OVERLAY V2 · MEASURED VERTICAL A/B / LAYOUT-LOCKED =====
+   Existing SV elements are untouched. New controls are absolute overlays only.
+   Measured stage: 1536 x 1024. Camera headers: A x=228..860, B x=872..1519.
+   DRAW launchers occupy empty header zones and do not alter flow/layout. */
+#svDrawOpenA,#svDrawOpenB{
+  position:absolute!important;top:103px!important;width:70px!important;height:29px!important;
+  z-index:146!important;box-sizing:border-box!important;border:1px solid #4b7f47!important;
+  border-radius:7px!important;background:linear-gradient(180deg,#17341b,#0b1b0e)!important;
+  color:#9cf45c!important;font:900 10px/27px Arial,"Malgun Gothic",sans-serif!important;
+  text-align:center!important;padding:0!important;cursor:pointer!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.06)!important;
+}
+#svDrawOpenA{left:625px!important}
+#svDrawOpenB{left:1170px!important}
+#svDrawOpenA.active,#svDrawOpenB.active{border-color:#8af24c!important;color:#fff!important;background:linear-gradient(180deg,#2d6e22,#153b16)!important}
+#svDrawOpenA:active,#svDrawOpenB:active{transform:translateY(1px)}
+
+.svDrawCanvas{
+  position:absolute;inset:0;width:100%;height:100%;z-index:5!important;
+  pointer-events:none;touch-action:none;background:transparent!important;
+}
+.svDrawCanvas.active{pointer-events:auto}
+
+.svDrawBar{
+  position:absolute!important;top:200px!important;width:46px!important;height:auto!important;z-index:148!important;
+  display:none;flex-direction:column;align-items:center;gap:4px;padding:4px 3px;box-sizing:border-box;
+  border:1px solid rgba(106,238,44,.42);border-radius:7px;
+  background:rgba(3,12,6,.93);box-shadow:0 2px 8px rgba(0,0,0,.42);
+}
+/* Measured vertical placement: A inside left edge, B inside right edge of each video layer.
+   videoLayerA x=228..860, videoLayerB x=872..1519, y=147..501. */
+#svDrawBarA{left:236px!important}
+#svDrawBarB{left:1465px!important}
+.svDrawBar.open{display:flex}
+.svDrawTool{
+  width:38px!important;height:30px!important;min-width:38px!important;padding:0!important;box-sizing:border-box;border:1px solid #36543d;
+  border-radius:5px;background:linear-gradient(180deg,#222b25,#111713);color:#eef3ef;
+  font:900 9px/28px Arial,"Malgun Gothic",sans-serif;cursor:pointer;white-space:nowrap;
+}
+.svDrawTool.active{border-color:#87ef48;background:linear-gradient(180deg,#2b5f24,#163619);color:#fff}
+.svDrawTool[data-tool="clear"]{border-color:#6a4747;color:#ffb6b6}
+.svDrawTool[data-tool="capture"]{border-color:#4b7f47;color:#baff87}
+.svDrawTool:active{transform:translateY(1px)}
+
+
+</style>
 </head>
 <body>
 <div id="viewport"><div id="stage" aria-label="SV_0.1 BETA approved design">
+
+<button id="svDrawOpenA" type="button" aria-label="A 화면 그리기">DRAW A</button>
+<button id="svDrawOpenB" type="button" aria-label="B 화면 그리기">DRAW B</button>
+<div id="svDrawBarA" class="svDrawBar" aria-label="A 화면 그리기 도구">
+  <button type="button" class="svDrawTool active" data-side="A" data-tool="line">선</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="circle">원</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="angle">각도</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="free">자유</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="vline">V</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="erase">지우기</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="clear">전체</button>
+  <button type="button" class="svDrawTool svDrawCapture" data-side="A" data-tool="capture">캡처</button>
+</div>
+<div id="svDrawBarB" class="svDrawBar" aria-label="B 화면 그리기 도구">
+  <button type="button" class="svDrawTool active" data-side="B" data-tool="line">선</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="circle">원</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="angle">각도</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="free">자유</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="vline">V</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="erase">지우기</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="clear">전체</button>
+  <button type="button" class="svDrawTool svDrawCapture" data-side="B" data-tool="capture">캡처</button>
+</div>
+
 
   <div id="camSetup">
     <div class="box">
@@ -4745,5 +4818,183 @@ addEventListener('DOMContentLoaded',()=>{
 #autoOn,#autoOn.manual-split{width:171px!important;left:29px!important;}
 #liveMain,#liveExit{font-size:15px!important;font-weight:900!important;line-height:1!important;}
 </style>
+
+<script id="sv-drawing-overlay-v1">
+(function(){
+'use strict';
+const DS={
+ A:{open:false,tool:'line',items:[],draft:null,clicks:[]},
+ B:{open:false,tool:'line',items:[],draft:null,clicks:[]}
+};
+const GREEN='#62ff38', LABEL_BG='rgba(25,25,25,.82)';
+function byId(id){return document.getElementById(id)}
+function makeCanvas(side){
+ const layer=byId('videoLayer'+side); if(!layer)return null;
+ let c=byId('svDrawCanvas'+side);
+ if(!c){c=document.createElement('canvas');c.id='svDrawCanvas'+side;c.className='svDrawCanvas';c.setAttribute('aria-label',side+' 분석 그리기 레이어');layer.appendChild(c)}
+ syncCanvas(side); return c;
+}
+function syncCanvas(side){
+ const c=byId('svDrawCanvas'+side), layer=byId('videoLayer'+side); if(!c||!layer)return;
+ const w=Math.max(1,Math.round(layer.clientWidth)),h=Math.max(1,Math.round(layer.clientHeight));
+ if(c.width!==w||c.height!==h){c.width=w;c.height=h;redraw(side)}
+}
+function pointFromEvent(side,e){
+ const c=byId('svDrawCanvas'+side),r=c.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(c.width/r.width),y:(e.clientY-r.top)*(c.height/r.height)};
+}
+function ctx(side){const c=byId('svDrawCanvas'+side);return c&&c.getContext('2d')}
+function setupCtx(g){g.lineWidth=3;g.strokeStyle=GREEN;g.fillStyle=GREEN;g.lineCap='round';g.lineJoin='round';g.font='900 13px Arial, sans-serif'}
+function angleDeg(v,a,b){
+ const x1=a.x-v.x,y1=a.y-v.y,x2=b.x-v.x,y2=b.y-v.y;
+ const l1=Math.hypot(x1,y1),l2=Math.hypot(x2,y2); if(l1<1||l2<1)return 0;
+ const d=Math.max(-1,Math.min(1,(x1*x2+y1*y2)/(l1*l2))); return Math.acos(d)*180/Math.PI;
+}
+function rayEnd(v,p,w,h){
+ const dx=p.x-v.x,dy=p.y-v.y;if(Math.hypot(dx,dy)<1)return p;
+ const ts=[];
+ if(dx>0)ts.push((w-v.x)/dx); if(dx<0)ts.push((0-v.x)/dx);
+ if(dy>0)ts.push((h-v.y)/dy); if(dy<0)ts.push((0-v.y)/dy);
+ const t=Math.min(...ts.filter(n=>n>0)); return {x:v.x+dx*t,y:v.y+dy*t};
+}
+function drawLabel(g,text,x,y){
+ const pad=5,h=22,w=Math.ceil(g.measureText(text).width)+pad*2; x=Math.max(2,Math.min(x,w?g.canvas.width-w-2:x));y=Math.max(h,Math.min(y,g.canvas.height-2));
+ g.fillStyle=LABEL_BG;g.fillRect(x,y-h,w,h);g.fillStyle='#fff';g.fillText(text,x+pad,y-6);g.fillStyle=GREEN;
+}
+function drawItem(g,it){
+ setupCtx(g);g.beginPath();
+ if(it.type==='line'){g.moveTo(it.a.x,it.a.y);g.lineTo(it.b.x,it.b.y);g.stroke();return}
+ if(it.type==='circle'){
+  const cx=(it.a.x+it.b.x)/2,cy=(it.a.y+it.b.y)/2,rx=Math.abs(it.b.x-it.a.x)/2,ry=Math.abs(it.b.y-it.a.y)/2;
+  if(rx>1&&ry>1){g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);g.stroke()}return
+ }
+ if(it.type==='free'){
+  const p=it.points||[];if(p.length<2)return;g.moveTo(p[0].x,p[0].y);for(let i=1;i<p.length;i++)g.lineTo(p[i].x,p[i].y);g.stroke();return
+ }
+ if(it.type==='angle'||it.type==='vline'){
+  const v=it.v,a=it.a,b=it.b;let aa=a,bb=b;
+  if(it.type==='vline'){aa=rayEnd(v,a,g.canvas.width,g.canvas.height);bb=rayEnd(v,b,g.canvas.width,g.canvas.height)}
+  g.moveTo(v.x,v.y);g.lineTo(aa.x,aa.y);g.moveTo(v.x,v.y);g.lineTo(bb.x,bb.y);g.stroke();
+  const deg=Math.round(angleDeg(v,a,b));drawLabel(g,deg+'°',v.x+10,v.y-8);return
+ }
+}
+function redraw(side){
+ const g=ctx(side);if(!g)return;g.clearRect(0,0,g.canvas.width,g.canvas.height);
+ for(const it of DS[side].items)drawItem(g,it);if(DS[side].draft)drawItem(g,DS[side].draft);
+ const clicks=DS[side].clicks;
+ if((DS[side].tool==='angle'||DS[side].tool==='vline')&&clicks.length){
+  setupCtx(g);for(const p of clicks){g.beginPath();g.arc(p.x,p.y,4,0,Math.PI*2);g.fill()}
+ }
+}
+function distSeg(p,a,b){
+ const vx=b.x-a.x,vy=b.y-a.y,wx=p.x-a.x,wy=p.y-a.y,c1=vx*wx+vy*wy;
+ if(c1<=0)return Math.hypot(p.x-a.x,p.y-a.y);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(p.x-b.x,p.y-b.y);
+ const t=c1/c2,px=a.x+t*vx,py=a.y+t*vy;return Math.hypot(p.x-px,p.y-py);
+}
+function hitItem(side,p,it){
+ if(it.type==='line')return distSeg(p,it.a,it.b)<16;
+ if(it.type==='circle'){const cx=(it.a.x+it.b.x)/2,cy=(it.a.y+it.b.y)/2,rx=Math.max(1,Math.abs(it.b.x-it.a.x)/2),ry=Math.max(1,Math.abs(it.b.y-it.a.y)/2);return Math.abs(Math.hypot((p.x-cx)/rx,(p.y-cy)/ry)-1)<.18}
+ if(it.type==='free'){const pts=it.points||[];for(let i=1;i<pts.length;i++)if(distSeg(p,pts[i-1],pts[i])<16)return true;return false}
+ if(it.type==='angle'||it.type==='vline'){return distSeg(p,it.v,it.a)<16||distSeg(p,it.v,it.b)<16}
+ return false;
+}
+function eraseAt(side,p){const a=DS[side].items;for(let i=a.length-1;i>=0;i--){if(hitItem(side,p,a[i])){a.splice(i,1);redraw(side);return}}}
+function activeVideo(side){
+ const replay=byId('replay'+side),live=byId('live'+side);
+ const replayVisible=replay&&getComputedStyle(replay).display!=='none'&&replay.readyState>=2;
+ if(replayVisible)return replay;
+ if(live&&live.readyState>=2)return live;
+ return replay&&replay.readyState>=2?replay:null;
+}
+function drawContainedVideo(out,video,side){
+ const W=out.canvas.width,H=out.canvas.height;
+ const sw=video.videoWidth||0,sh=video.videoHeight||0;if(!sw||!sh)return false;
+ let rot=0;try{rot=((state?.[side]?.rotate||0)%360+360)%360}catch(_){rot=0}
+ const quarter=rot===90||rot===270;
+ const bw=quarter?H:W,bh=quarter?W:H;
+ const scale=Math.min(bw/sw,bh/sh),dw=sw*scale,dh=sh*scale;
+ out.save();out.translate(W/2,H/2);out.rotate(rot*Math.PI/180);
+ out.drawImage(video,0,0,sw,sh,-dw/2,-dh/2,dw,dh);out.restore();
+ return true;
+}
+function canvasToBlob(canvas,type='image/png',quality){
+ return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('캡처 이미지 생성 실패')),type,quality));
+}
+function buildDrawCaptureName(side){
+ const member=typeof getSVMemberInfo==='function'?getSVMemberInfo():{name:'미지정'};
+ const t=typeof getLocalStamp==='function'?getLocalStamp():(()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return {date:`${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}`,time:`${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`}})();
+ const view=side==='A'?'정':'측';
+ const clean=typeof sanitizeFilePart==='function'?sanitizeFilePart(member.name):String(member.name||'미지정').replace(/[\\/:*?"<>|]/g,'_');
+ return `${clean}_${t.date}_${t.time}_${view}_${side}_교정.png`;
+}
+async function saveDrawCapture(side){
+ try{
+  syncCanvas(side);redraw(side);
+  const layer=byId('videoLayer'+side),draw=byId('svDrawCanvas'+side);if(!layer||!draw)throw new Error('그리기 화면 없음');
+  const video=activeVideo(side);if(!video){toast(side+' 캡처할 영상 화면이 없습니다.');return}
+  const W=Math.max(1,Math.round(layer.clientWidth)),H=Math.max(1,Math.round(layer.clientHeight));
+  const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
+  g.fillStyle='#000';g.fillRect(0,0,W,H);
+  if(!drawContainedVideo(g,video,side))throw new Error('영상 프레임 없음');
+  const pose=byId('pose'+side);if(pose&&getComputedStyle(pose).display!=='none'&&pose.width&&pose.height){try{g.drawImage(pose,0,0,W,H)}catch(_){}}
+  g.drawImage(draw,0,0,W,H);
+  const blob=await canvasToBlob(out,'image/png');const fileName=buildDrawCaptureName(side);
+  try{
+   if(typeof ensureSVVideoRootHandle==='function'){
+    const root=await ensureSVVideoRootHandle();
+    if(root){
+     const member=typeof getSVMemberInfo==='function'?getSVMemberInfo():{name:'미지정'};
+     const memberFolder=typeof sanitizeFilePart==='function'?sanitizeFilePart(member.name):'미지정';
+     const memberDir=await root.getDirectoryHandle(memberFolder,{create:true});
+     const fh=await memberDir.getFileHandle(fileName,{create:true});const wr=await fh.createWritable();await wr.write(blob);await wr.close();
+     toast(`교정사진 저장완료 · ${memberFolder} / ${fileName}`);return;
+    }
+   }
+  }catch(err){console.warn('draw capture folder save',err)}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast(side+' 교정사진 다운로드 저장');
+ }catch(err){console.error('SV draw capture',err);toast(side+' 교정사진 저장 실패')}
+}
+function setTool(side,tool){
+ if(tool==='capture'){saveDrawCapture(side);return}
+ if(tool==='clear'){DS[side].items=[];DS[side].draft=null;DS[side].clicks=[];redraw(side);return}
+ DS[side].tool=tool;DS[side].draft=null;DS[side].clicks=[];
+ document.querySelectorAll('.svDrawTool[data-side="'+side+'"]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));redraw(side);
+}
+function toggle(side){
+ const s=DS[side];s.open=!s.open;const c=byId('svDrawCanvas'+side),bar=byId('svDrawBar'+side),op=byId('svDrawOpen'+side);
+ c&&c.classList.toggle('active',s.open);bar&&bar.classList.toggle('open',s.open);op&&op.classList.toggle('active',s.open);
+ if(!s.open){s.draft=null;s.clicks=[];redraw(side)}
+}
+function bindCanvas(side){
+ const c=makeCanvas(side);if(!c)return;let down=false,start=null;
+ c.addEventListener('pointerdown',e=>{
+  if(!DS[side].open)return;const p=pointFromEvent(side,e),tool=DS[side].tool;
+  if(tool==='erase'){eraseAt(side,p);return}
+  if(tool==='angle'||tool==='vline'){
+   DS[side].clicks.push(p);
+   if(DS[side].clicks.length===3){const [v,a,b]=DS[side].clicks;DS[side].items.push({type:tool,v,a,b});DS[side].clicks=[]}
+   redraw(side);return
+  }
+  down=true;start=p;try{c.setPointerCapture(e.pointerId)}catch(_){}
+  if(tool==='free')DS[side].draft={type:'free',points:[p]}; else DS[side].draft={type:tool,a:p,b:p};redraw(side);e.preventDefault();
+ });
+ c.addEventListener('pointermove',e=>{
+  if(!down||!DS[side].draft)return;const p=pointFromEvent(side,e);
+  if(DS[side].tool==='free')DS[side].draft.points.push(p);else DS[side].draft.b=p;redraw(side);e.preventDefault();
+ });
+ const finish=e=>{if(!down)return;down=false;if(DS[side].draft){DS[side].items.push(DS[side].draft);DS[side].draft=null;redraw(side)}try{c.releasePointerCapture(e.pointerId)}catch(_){} };
+ c.addEventListener('pointerup',finish);c.addEventListener('pointercancel',finish);
+}
+function init(){
+ ['A','B'].forEach(side=>{
+  bindCanvas(side);byId('svDrawOpen'+side)?.addEventListener('click',()=>toggle(side));
+  document.querySelectorAll('.svDrawTool[data-side="'+side+'"]').forEach(b=>b.addEventListener('click',()=>setTool(side,b.dataset.tool)));
+ });
+ window.addEventListener('resize',()=>{syncCanvas('A');syncCanvas('B')});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+</script>
+
 </body>
 </html>
