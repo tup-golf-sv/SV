@@ -99,9 +99,9 @@ async function prepare(){
   }
 
   try{
-    let q=await root.queryPermission({mode:'read'});
+    let q=await root.queryPermission({mode:(action==='save'?'readwrite':'read')});
     if(q!=='granted'){
-      desc.textContent='SV영상 폴더 권한이 필요합니다.';
+      desc.textContent=(action==='save'?'SV영상 폴더의 읽기/쓰기 권한이 필요합니다.':'SV영상 폴더 읽기 권한이 필요합니다.');
       rootBtn.hidden=false;
       return false;
     }
