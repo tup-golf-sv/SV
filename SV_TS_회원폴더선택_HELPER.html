@@ -35,6 +35,7 @@ const KEY='SV_VIDEO_ROOT';
 const p=new URLSearchParams(location.search);
 const member=String(p.get('member')||'').trim();
 const side=(p.get('side')==='B'?'B':'A');
+const action=String(p.get('action')||'pick').toLowerCase();
 
 const title=document.getElementById('title');
 const desc=document.getElementById('desc');
@@ -42,7 +43,7 @@ const openBtn=document.getElementById('openBtn');
 const rootBtn=document.getElementById('rootBtn');
 const msg=document.getElementById('msg');
 
-title.textContent=(member||'회원')+' · '+side+' 영상 선택';
+title.textContent=(member||'회원')+' · '+side+(action==='save'?' 화면저장':' 영상 선택');
 
 function safeName(v){
   return String(v||'').trim()
@@ -105,9 +106,27 @@ async function prepare(){
       return false;
     }
 
-    memberDir=await root.getDirectoryHandle(safeName(member),{create:false});
+    /* 저장모드에서는 회원폴더가 아직 없으면 생성 허용.
+       선택모드는 기존 동작 그대로 기존 회원폴더만 연다. */
+    memberDir=await root.getDirectoryHandle(safeName(member),{create:(action==='save')});
     desc.textContent='SV영상 → '+safeName(member)+' 폴더가 준비되었습니다.';
-    openBtn.hidden=false;
+
+    if(action==='save'){
+      openBtn.hidden=true;
+      rootBtn.hidden=true;
+      msg.textContent='TS 화면저장 데이터를 기다리는 중입니다...';
+      try{
+        if(window.opener && !window.opener.closed){
+          window.opener.postMessage({
+            type:'TUP_TS_MEMBER_SAVE_HELPER_READY',
+            memberName:member,
+            side:side
+          },'*');
+        }
+      }catch(e){}
+    }else{
+      openBtn.hidden=false;
+    }
     return true;
   }catch(e){
     desc.textContent='SV영상 안에 '+safeName(member)+' 회원폴더를 찾지 못했습니다.';
@@ -312,6 +331,76 @@ rootBtn.onclick=async function(){
 };
 
 openBtn.onclick=pickMemberFile;
+
+/* =========================
+   TS PC 화면저장 → 현재회원 폴더 직접저장
+   - TS(Apps Script/file origin)의 Blob을 GitHub HELPER로 postMessage
+   - HELPER가 보유한 SV_VIDEO_ROOT DirectoryHandle로 직접 기록
+   - 저장위치: SV영상 / 현재회원 /
+========================= */
+window.addEventListener('message',async function(ev){
+  var d=ev&&ev.data;
+  if(action!=='save' || !d || d.type!=='TUP_TS_MEMBER_SCREEN_SAVE')return;
+  if(window.opener && ev.source!==window.opener)return;
+
+  try{
+    if(!memberDir)throw new Error('현재 회원폴더가 준비되지 않았습니다.');
+    if(!(d.blob instanceof Blob))throw new Error('PNG Blob을 받지 못했습니다.');
+    if(!d.blob.size)throw new Error('PNG 파일 크기가 0 byte 입니다.');
+
+    var incoming=String(d.memberName||'').trim();
+    if(incoming && safeName(incoming)!==safeName(member)){
+      throw new Error('현재 회원과 저장 요청 회원이 다릅니다.');
+    }
+
+    var fileName=String(d.fileName||'').trim();
+    if(!fileName)fileName=safeName(member)+'_'+Date.now()+'_TS_'+side+'_화면저장.png';
+    fileName=fileName.replace(/[\\/:*?"<>|]/g,'_');
+    if(!/\.png$/i.test(fileName))fileName+='.png';
+
+    msg.textContent='현재 회원폴더에 저장하는 중입니다...\n'+fileName;
+
+    var fh=await memberDir.getFileHandle(fileName,{create:true});
+    var w=await fh.createWritable();
+    await w.write(d.blob);
+    await w.close();
+
+    msg.textContent=
+      '저장 완료\n'+
+      'SV영상 → '+safeName(member)+' → '+fileName+'\n'+
+      Math.round(d.blob.size/1024)+' KB';
+
+    try{
+      if(window.opener && !window.opener.closed){
+        window.opener.postMessage({
+          type:'TUP_TS_MEMBER_SCREEN_SAVE_RESULT',
+          ok:true,
+          memberName:member,
+          side:side,
+          fileName:fileName,
+          bytes:d.blob.size
+        },'*');
+      }
+    }catch(e){}
+
+    setTimeout(function(){window.close();},900);
+  }catch(e){
+    console.error(e);
+    msg.textContent='화면저장 실패\n'+String(e&&e.message||e);
+    try{
+      if(window.opener && !window.opener.closed){
+        window.opener.postMessage({
+          type:'TUP_TS_MEMBER_SCREEN_SAVE_RESULT',
+          ok:false,
+          memberName:member,
+          side:side,
+          error:String(e&&e.message||e)
+        },'*');
+      }
+    }catch(x){}
+  }
+},false);
+
 prepare();
 
 })();
