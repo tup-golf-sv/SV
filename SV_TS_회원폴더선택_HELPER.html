@@ -12,7 +12,7 @@ p{margin:7px 0;color:#d9e7df;font-size:14px;line-height:1.5}
 button{width:100%;min-height:48px;margin-top:12px;border:0;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer}
 .primary{background:#0d6b49;color:#fff}
 .secondary{background:#e9eeeB;color:#183128}
-#msg{margin-top:10px;font-size:13px;color:#f3d36b}
+#msg{margin-top:10px;font-size:13px;color:#f3d36b;white-space:pre-wrap;word-break:break-word}
 </style>
 </head>
 <body>
@@ -116,6 +116,79 @@ async function prepare(){
   }
 }
 
+/* =========================
+   V4 실측보완
+   - FileSystemFileHandle.getFile() 원본을 postMessage로 바로 넘기지 않음
+   - 실제 bytes(ArrayBuffer)를 다시 읽어 새 File로 재구성
+   - WebM/MP4 기본 헤더를 확인한 뒤 TS로 전달
+   - UI/폴더구조/파일목록 방식은 그대로 유지
+========================= */
+
+function hex4(u8){
+  return Array.from(u8.slice(0,16)).map(v=>v.toString(16).padStart(2,'0')).join(' ');
+}
+
+function detectContainer(u8,name,type){
+  if(u8.length>=4 && u8[0]===0x1A && u8[1]===0x45 && u8[2]===0xDF && u8[3]===0xA3){
+    return {kind:'webm', mime:'video/webm', ok:true};
+  }
+  if(u8.length>=12 &&
+     u8[4]===0x66 && u8[5]===0x74 && u8[6]===0x79 && u8[7]===0x70){
+    return {kind:'mp4', mime:'video/mp4', ok:true};
+  }
+
+  var lower=String(name||'').toLowerCase();
+  var t=String(type||'').toLowerCase();
+
+  if(/^image\//.test(t) || /\.(png|jpe?g|webp|bmp)$/i.test(lower)){
+    return {kind:'image', mime:type||'application/octet-stream', ok:true};
+  }
+
+  return {kind:'unknown', mime:type||'application/octet-stream', ok:false};
+}
+
+async function rebuildFileForTS(file){
+  if(!(file instanceof Blob)){
+    throw new Error('선택 파일이 Blob/File 객체가 아닙니다.');
+  }
+  if(!file.size){
+    throw new Error('선택 파일 크기가 0 byte 입니다.');
+  }
+
+  var buffer=await file.arrayBuffer();
+  if(!buffer || !buffer.byteLength){
+    throw new Error('파일 바이트를 읽지 못했습니다.');
+  }
+
+  var head=new Uint8Array(buffer,0,Math.min(32,buffer.byteLength));
+  var info=detectContainer(head,file.name,file.type);
+
+  if(!info.ok){
+    throw new Error(
+      '영상 컨테이너 헤더를 확인할 수 없습니다.\\n'+
+      '파일: '+String(file.name||'')+'\\n'+
+      '크기: '+buffer.byteLength+' bytes\\n'+
+      'type: '+String(file.type||'(없음)')+'\\n'+
+      'header: '+hex4(head)
+    );
+  }
+
+  var mime=info.mime || file.type || 'application/octet-stream';
+  var rebuilt=new File(
+    [buffer],
+    file.name || ('TS_'+side+'_'+Date.now()),
+    {type:mime,lastModified:Number(file.lastModified||Date.now())}
+  );
+
+  return {
+    file:rebuilt,
+    container:info.kind,
+    bytes:buffer.byteLength,
+    mime:mime,
+    header:hex4(head)
+  };
+}
+
 async function pickMemberFile(){
   if(!memberDir){
     msg.textContent='회원폴더가 준비되지 않았습니다.';
@@ -123,8 +196,6 @@ async function pickMemberFile(){
   }
 
   try{
-    /* showOpenFilePicker(startIn:DirectoryHandle) 대신
-       이미 권한이 있는 회원폴더 내부를 직접 읽는다. */
     var files=[];
     for await (const entry of memberDir.values()){
       if(entry.kind!=='file')continue;
@@ -149,7 +220,6 @@ async function pickMemberFile(){
       return;
     }
 
-    /* 회원폴더 안의 파일만 표시 */
     openBtn.hidden=true;
     rootBtn.hidden=true;
     desc.textContent=safeName(member)+' 회원폴더 · 파일을 선택하세요.';
@@ -174,23 +244,38 @@ async function pickMemberFile(){
 
       b.onclick=async function(){
         try{
-          var file=await item.handle.getFile();
+          b.disabled=true;
+          msg.textContent='원본 파일 바이트를 확인하는 중입니다...';
 
-          if(window.opener && !window.opener.closed){
-            window.opener.postMessage({
-              type:'TUP_TS_MEMBER_PICKED_FILE',
-              side:side,
-              memberName:member,
-              fileName:file.name,
-              file:file
-            },'*');
+          var original=await item.handle.getFile();
+          var rebuilt=await rebuildFileForTS(original);
+
+          if(!window.opener || window.opener.closed){
+            throw new Error('TS 창과 연결이 끊어졌습니다.');
           }
 
-          msg.textContent='TS '+side+' 화면으로 전달했습니다.';
-          setTimeout(function(){window.close();},180);
+          window.opener.postMessage({
+            type:'TUP_TS_MEMBER_PICKED_FILE',
+            side:side,
+            memberName:member,
+            fileName:rebuilt.file.name,
+            file:rebuilt.file,
+            byteLength:rebuilt.bytes,
+            container:rebuilt.container,
+            mime:rebuilt.mime,
+            header:rebuilt.header,
+            rebuilt:true
+          },'*');
+
+          msg.textContent=
+            'TS '+side+' 화면으로 실제 바이트 전달 완료\\n'+
+            rebuilt.container.toUpperCase()+' · '+rebuilt.bytes+' bytes · '+rebuilt.mime;
+
+          setTimeout(function(){window.close();},900);
         }catch(e){
           console.error(e);
-          msg.textContent='선택한 파일을 읽지 못했습니다.';
+          b.disabled=false;
+          msg.textContent='전달 실패\\n'+String(e&&e.message||e);
         }
       };
 
@@ -227,7 +312,6 @@ rootBtn.onclick=async function(){
 };
 
 openBtn.onclick=pickMemberFile;
-
 prepare();
 
 })();
