@@ -1863,7 +1863,6 @@ window.addEventListener('DOMContentLoaded',()=>{
 }
 .svDrawTool.active{border-color:#87ef48;background:linear-gradient(180deg,#2b5f24,#163619);color:#fff}
 .svDrawTool[data-tool="clear"]{border-color:#6a4747;color:#ffb6b6}
-.svDrawTool[data-tool="capture"]{border-color:#4b7f47;color:#baff87}
 .svDrawTool:active{transform:translateY(1px)}
 
 
@@ -1882,7 +1881,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button type="button" class="svDrawTool" data-side="A" data-tool="vline">V</button>
   <button type="button" class="svDrawTool" data-side="A" data-tool="erase">지우기</button>
   <button type="button" class="svDrawTool" data-side="A" data-tool="clear">전체</button>
-  <button type="button" class="svDrawTool svDrawCapture" data-side="A" data-tool="capture">캡처</button>
+  <button type="button" class="svDrawTool" data-side="A" data-tool="capture">캡처</button>
 </div>
 <div id="svDrawBarB" class="svDrawBar" aria-label="B 화면 그리기 도구">
   <button type="button" class="svDrawTool active" data-side="B" data-tool="line">선</button>
@@ -1892,7 +1891,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   <button type="button" class="svDrawTool" data-side="B" data-tool="vline">V</button>
   <button type="button" class="svDrawTool" data-side="B" data-tool="erase">지우기</button>
   <button type="button" class="svDrawTool" data-side="B" data-tool="clear">전체</button>
-  <button type="button" class="svDrawTool svDrawCapture" data-side="B" data-tool="capture">캡처</button>
+  <button type="button" class="svDrawTool" data-side="B" data-tool="capture">캡처</button>
 </div>
 
 
@@ -4899,63 +4898,7 @@ function hitItem(side,p,it){
  return false;
 }
 function eraseAt(side,p){const a=DS[side].items;for(let i=a.length-1;i>=0;i--){if(hitItem(side,p,a[i])){a.splice(i,1);redraw(side);return}}}
-function activeVideo(side){
- const replay=byId('replay'+side),live=byId('live'+side);
- const replayVisible=replay&&getComputedStyle(replay).display!=='none'&&replay.readyState>=2;
- if(replayVisible)return replay;
- if(live&&live.readyState>=2)return live;
- return replay&&replay.readyState>=2?replay:null;
-}
-function drawContainedVideo(out,video,side){
- const W=out.canvas.width,H=out.canvas.height;
- const sw=video.videoWidth||0,sh=video.videoHeight||0;if(!sw||!sh)return false;
- let rot=0;try{rot=((state?.[side]?.rotate||0)%360+360)%360}catch(_){rot=0}
- const quarter=rot===90||rot===270;
- const bw=quarter?H:W,bh=quarter?W:H;
- const scale=Math.min(bw/sw,bh/sh),dw=sw*scale,dh=sh*scale;
- out.save();out.translate(W/2,H/2);out.rotate(rot*Math.PI/180);
- out.drawImage(video,0,0,sw,sh,-dw/2,-dh/2,dw,dh);out.restore();
- return true;
-}
-function canvasToBlob(canvas,type='image/png',quality){
- return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('캡처 이미지 생성 실패')),type,quality));
-}
-function buildDrawCaptureName(side){
- const member=typeof getSVMemberInfo==='function'?getSVMemberInfo():{name:'미지정'};
- const t=typeof getLocalStamp==='function'?getLocalStamp():(()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return {date:`${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}`,time:`${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`}})();
- const view=side==='A'?'정':'측';
- const clean=typeof sanitizeFilePart==='function'?sanitizeFilePart(member.name):String(member.name||'미지정').replace(/[\\/:*?"<>|]/g,'_');
- return `${clean}_${t.date}_${t.time}_${view}_${side}_교정.png`;
-}
-async function saveDrawCapture(side){
- try{
-  syncCanvas(side);redraw(side);
-  const layer=byId('videoLayer'+side),draw=byId('svDrawCanvas'+side);if(!layer||!draw)throw new Error('그리기 화면 없음');
-  const video=activeVideo(side);if(!video){toast(side+' 캡처할 영상 화면이 없습니다.');return}
-  const W=Math.max(1,Math.round(layer.clientWidth)),H=Math.max(1,Math.round(layer.clientHeight));
-  const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
-  g.fillStyle='#000';g.fillRect(0,0,W,H);
-  if(!drawContainedVideo(g,video,side))throw new Error('영상 프레임 없음');
-  const pose=byId('pose'+side);if(pose&&getComputedStyle(pose).display!=='none'&&pose.width&&pose.height){try{g.drawImage(pose,0,0,W,H)}catch(_){}}
-  g.drawImage(draw,0,0,W,H);
-  const blob=await canvasToBlob(out,'image/png');const fileName=buildDrawCaptureName(side);
-  try{
-   if(typeof ensureSVVideoRootHandle==='function'){
-    const root=await ensureSVVideoRootHandle();
-    if(root){
-     const member=typeof getSVMemberInfo==='function'?getSVMemberInfo():{name:'미지정'};
-     const memberFolder=typeof sanitizeFilePart==='function'?sanitizeFilePart(member.name):'미지정';
-     const memberDir=await root.getDirectoryHandle(memberFolder,{create:true});
-     const fh=await memberDir.getFileHandle(fileName,{create:true});const wr=await fh.createWritable();await wr.write(blob);await wr.close();
-     toast(`교정사진 저장완료 · ${memberFolder} / ${fileName}`);return;
-    }
-   }
-  }catch(err){console.warn('draw capture folder save',err)}
-  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast(side+' 교정사진 다운로드 저장');
- }catch(err){console.error('SV draw capture',err);toast(side+' 교정사진 저장 실패')}
-}
 function setTool(side,tool){
- if(tool==='capture'){saveDrawCapture(side);return}
  if(tool==='clear'){DS[side].items=[];DS[side].draft=null;DS[side].clicks=[];redraw(side);return}
  DS[side].tool=tool;DS[side].draft=null;DS[side].clicks=[];
  document.querySelectorAll('.svDrawTool[data-side="'+side+'"]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));redraw(side);
@@ -4995,6 +4938,70 @@ function init(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
 </script>
+\n<script id="sv-draw-capture-isolated-v6">
+/* V6: isolated capture add-on + existing SV member-folder save. Does not touch replay/camera/detection state. */
+(function(){
+'use strict';
+function el(id){return document.getElementById(id)}
+function visibleVideo(side){
+  var r=el('replay'+side), l=el('live'+side);
+  if(r && getComputedStyle(r).display!=='none' && r.readyState>=2) return r;
+  if(l && getComputedStyle(l).display!=='none' && l.readyState>=2) return l;
+  if(r && r.readyState>=2) return r;
+  if(l && l.readyState>=2) return l;
+  return null;
+}
+function stamp(){var d=new Date(),z=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'_'+z(d.getHours())+z(d.getMinutes())+z(d.getSeconds())}
+function save(side){
+ try{
+  var layer=el('videoLayer'+side), draw=el('svDrawCanvas'+side), video=visibleVideo(side);
+  if(!layer||!draw||!video){if(typeof toast==='function')toast(side+' 캡처할 화면이 없습니다.');return}
+  var W=Math.max(1,Math.round(layer.clientWidth)), H=Math.max(1,Math.round(layer.clientHeight));
+  var out=document.createElement('canvas');out.width=W;out.height=H;var g=out.getContext('2d');
+  g.fillStyle='#000';g.fillRect(0,0,W,H);
+  var sw=video.videoWidth||0,sh=video.videoHeight||0;if(!sw||!sh){if(typeof toast==='function')toast(side+' 영상 프레임 준비중');return}
+  var rot=0;try{rot=((window.state&&state[side]&&state[side].rotate)||0)%360;if(rot<0)rot+=360}catch(_){rot=0}
+  var quarter=(rot===90||rot===270), bw=quarter?H:W,bh=quarter?W:H,sc=Math.min(bw/sw,bh/sh),dw=sw*sc,dh=sh*sc;
+  g.save();g.translate(W/2,H/2);g.rotate(rot*Math.PI/180);g.drawImage(video,0,0,sw,sh,-dw/2,-dh/2,dw,dh);g.restore();
+  var pose=el('pose'+side);if(pose&&getComputedStyle(pose).display!=='none'&&pose.width&&pose.height){try{g.drawImage(pose,0,0,W,H)}catch(_){}}
+  g.drawImage(draw,0,0,W,H);
+  out.toBlob(async function(blob){
+    if(!blob){if(typeof toast==='function')toast(side+' 캡처 생성 실패');return}
 
+    /* V6: use the exact same remembered SV root + member folder as video save. */
+    var member=(typeof getSVMemberInfo==='function')?getSVMemberInfo():{name:'미지정회원'};
+    var memberName=(typeof sanitizeFilePart==='function')?sanitizeFilePart(member.name):String(member.name||'미지정회원');
+    var view=side==='A'?'정':'측';
+    var fileName=memberName+'_'+stamp()+'_'+view+'_'+side+'_교정.png';
+
+    try{
+      var root=(typeof ensureSVVideoRootHandle==='function')?await ensureSVVideoRootHandle():null;
+      if(root){
+        var memberDir=await root.getDirectoryHandle(memberName,{create:true});
+        var fileHandle=await memberDir.getFileHandle(fileName,{create:true});
+        var writable=await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        if(typeof toast==='function')toast('캡처 저장완료 · '+memberName+' / '+fileName);
+        return;
+      }
+    }catch(err){
+      console.error('SV capture member-folder save',err);
+      if(typeof toast==='function')toast('회원폴더 저장 실패 · 일반 다운로드로 저장합니다.');
+    }
+
+    /* Fallback only when the File System Access API/folder permission is unavailable. */
+    var u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},1500);
+    if(typeof toast==='function')toast(side+' 교정사진 다운로드 저장');
+  },'image/png');
+ }catch(err){console.error('SV isolated capture',err);if(typeof toast==='function')toast(side+' 캡처 저장 실패')}
+}
+/* Capture phase prevents the drawing-tool selector from treating CAPTURE as a drawing mode. */
+document.addEventListener('click',function(e){
+ var b=e.target&&e.target.closest?e.target.closest('.svDrawTool[data-tool="capture"]'):null;if(!b)return;
+ e.preventDefault();e.stopImmediatePropagation();save(b.dataset.side);
+},true);
+})();
+</script>\n
 </body>
 </html>
