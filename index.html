@@ -79,7 +79,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 .videoLayer .modeBadge{position:absolute;left:12px;top:10px;z-index:6;padding:4px 8px;border-radius:999px;background:rgba(0,0,0,.62);border:1px solid rgba(88,230,0,.55);color:#69ef1a;font-size:12px;font-weight:800}
 .videoLayer .camState{position:absolute;right:12px;top:10px;z-index:6;padding:4px 8px;border-radius:999px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:11px;font-weight:700}
 #flightOverlay{position:absolute;left:420px;top:583px;width:858px;height:258px;z-index:5;pointer-events:none}
-#flightOverlay svg{width:100%;height:100%;overflow:visible}
+#flightOverlay svg{display:none!important;width:100%;height:100%;overflow:visible}
 .simPath{fill:none;stroke-linecap:round;stroke-width:2.2;opacity:.24}
 .simPath.current{stroke:#8bdcff;stroke-width:3.2;opacity:1;filter:drop-shadow(0 0 5px #62cfff)}
 .simPath.old1{stroke:#6cdcff;opacity:.36}
@@ -692,6 +692,40 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 #trimActions{position:absolute;left:29px;top:510px;width:171px;z-index:141;display:none;gap:5px;flex-wrap:wrap}
 #trimActions button{height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.22);background:rgba(12,31,23,.95);color:#fff;font-size:9px;font-weight:900;cursor:pointer}
 #trimPreviewBtn{width:83px} #trimSaveBtn{width:83px;border-color:#58d85a!important} #trimCancelBtn{width:171px}
+
+
+/* ===== D2 V1 BALL FLIGHT HUD · MEASURED INSIDE EXISTING 858x258 VIEW =====
+   Existing flight box remains exactly left 420 / top 583 / 858x258. */
+#d2FlightCanvas{position:absolute;inset:0;width:858px;height:258px;z-index:7;pointer-events:none}
+#d2FlightHud{position:absolute;left:668px;top:164px;width:172px;height:78px;z-index:8;box-sizing:border-box;
+  padding:9px 12px;border:1px solid rgba(255,132,0,.58);border-radius:8px;
+  background:rgba(1,12,8,.60);color:#f3f7f3;
+  font-family:Arial,"Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-.1px;
+  pointer-events:none}
+#d2FlightHud .d2row.apexOnly{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;white-space:nowrap}
+#d2FlightHud .d2label{color:#f2f5f2;font-size:18px;font-weight:900;line-height:1}
+#d2FlightHud .d2value{color:#ff7a00;font-size:24px;font-weight:900;line-height:1.05;text-shadow:0 0 8px rgba(255,122,0,.42)}
+
+/* ===== D2 BOTTOM METRIC VALUES · MEASURED AGAINST 1536x1024 STAGE BACKGROUND =====
+   Existing bottom cells remain untouched. Only the baked "--" value positions are covered. */
+#d2MetricValues{position:absolute;left:0;top:0;width:1536px;height:1024px;z-index:97;pointer-events:none}
+.d2MetricValue{position:absolute;top:906px;height:33px;display:flex;align-items:center;justify-content:center;
+  box-sizing:border-box;background:rgba(1,13,7,.97);color:#7ef242;font:900 22px/1 Arial,"Noto Sans KR","Malgun Gothic",sans-serif;
+  text-shadow:0 0 8px rgba(126,242,66,.25);white-space:nowrap}
+#d2MetricSide{left:242px;width:116px}
+#d2MetricBall{left:361px;width:116px}
+#d2MetricSmash{left:480px;width:116px}
+#d2MetricCarry{left:600px;width:123px}
+#d2MetricTotal{left:725px;width:120px}
+#d2MetricLaunch{left:847px;width:117px}
+#d2MetricDirection{left:966px;width:116px}
+#d2MetricBack{left:1084px;width:118px}
+#d2MetricSideSpin{left:1204px;width:127px}
+
+
+#d2MetricSideLabel{position:absolute;left:242px;top:880px;width:116px;height:27px;z-index:98;pointer-events:none;
+ display:flex;align-items:center;justify-content:center;box-sizing:border-box;background:rgba(1,13,7,.98);
+ color:#fff;font:900 13px/1 Arial,"Noto Sans KR","Malgun Gothic",sans-serif;white-space:nowrap}
 
 </style>
 
@@ -1818,7 +1852,7 @@ async function getSelectedDeviceId(side){
 addEventListener('DOMContentLoaded',()=>{
  fit();
  document.getElementById('volume')?.addEventListener('input',e=>setVolume(e.target.value));
- startSimulation();
+ /* D2 V1: fake periodic trajectory disabled. */
  updateDeviceTags();
  if(!selectedDeviceA && !selectedDeviceB) setTimeout(()=>toast('환경설정에서 A/B 카메라를 한 번 지정하세요.'),700);
 });
@@ -1940,9 +1974,11 @@ window.addEventListener('DOMContentLoaded',()=>{
   <div id="ballFlightSelectedBg"></div><div id="flightOverlay" aria-hidden="true">
     <svg viewBox="0 0 858 258" preserveAspectRatio="none">
       <g id="simHistory"></g>
-      <path id="simCurrent" class="simPath current" d="M32 232 C180 190 330 120 505 76 C650 40 760 34 824 52"></path>
-      <circle id="simBall" class="simBall" cx="824" cy="52" r="4"></circle>
+      <path id="simCurrent" class="simPath current" d=""></path>
+      <circle id="simBall" class="simBall" cx="70" cy="230" r="4"></circle>
     </svg>
+    <canvas id="d2FlightCanvas" width="858" height="258"></canvas>
+    <div id="d2FlightHud"><div class="d2row apexOnly"><span class="d2label">APEX</span><span id="d2Apex" class="d2value">-- m</span></div></div>
   </div>
 
   <div id="shotDistancePanel" aria-label="샷 거리 기록">
@@ -1950,6 +1986,20 @@ window.addEventListener('DOMContentLoaded',()=>{
     <div class="shotAvg shotRow"><span class="shotNo">평균</span><span class="shotValue"><strong id="shotAverageCarry">--</strong> / <b id="shotAverageTotal">--</b> m</span></div>
     <div id="shotDistanceList"></div>
   </div>
+
+  <div id="d2MetricSideLabel" aria-hidden="true">좌우편차</div>
+  <div id="d2MetricValues" aria-hidden="true">
+    <div id="d2MetricSide" class="d2MetricValue">--</div>
+    <div id="d2MetricBall" class="d2MetricValue">--</div>
+    <div id="d2MetricSmash" class="d2MetricValue">--</div>
+    <div id="d2MetricCarry" class="d2MetricValue">--</div>
+    <div id="d2MetricTotal" class="d2MetricValue">--</div>
+    <div id="d2MetricLaunch" class="d2MetricValue">--</div>
+    <div id="d2MetricDirection" class="d2MetricValue">--</div>
+    <div id="d2MetricBack" class="d2MetricValue">--</div>
+    <div id="d2MetricSideSpin" class="d2MetricValue">--</div>
+  </div>
+
   <div id="toast"></div><div id="readyCenter">READY</div><div id="audioHitState" style="display:none"></div>
 <div id="tsButtonCleanMask" aria-hidden="true"></div>
 <button id="settings" class="hit" onclick="openTSStandalone()" aria-label="TS 분석"></button>
@@ -2514,7 +2564,8 @@ function v54Presence(lm){
 }
 
 function v54StartReplayRecord(){
-  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
+  const sensorPoseArm=(typeof SV_DETECT_MODE!=='undefined' && SV_DETECT_MODE==='SENSOR');
+  if(!sensorPoseArm && typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
   if(v54RecordStarted)return;
   const sides=vR7ConnectedSides();
   if(!sides.length)return;
@@ -2523,7 +2574,7 @@ function v54StartReplayRecord(){
     // Reuse the proven synchronized A/B blob session. With one connected camera,
     // expected.size is 1, so it naturally becomes a single-camera replay session.
     const session=sv113NewABSession();
-    session.source='POSE';
+    session.source=(typeof SV_DETECT_MODE!=='undefined' && SV_DETECT_MODE==='SENSOR')?'SENSOR_POSE_ARM':'POSE';
     sides.forEach(side=>{
       const ok=sv113StartSide(side);
       if(ok)session.expected.add(side);
@@ -2911,8 +2962,15 @@ function detectSwingB(l){
 }
 
 function detectSwing(l,side='A'){
-  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
-  if(typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
+  const sensorPoseArm=(typeof SV_DETECT_MODE!=='undefined' && SV_DETECT_MODE==='SENSOR');
+  // In SENSOR mode POSE is used ONLY for the proven motion-detection ADDRESS start point.
+  // SENSOR remains the only SHOT confirmation source.
+  if(!sensorPoseArm && typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
+  if(!sensorPoseArm && typeof shouldUseSensorDetection==='function' && shouldUseSensorDetection())return;
+
+  // Once SENSOR-mode recording has started at ADDRESS, freeze the pose state machine.
+  // The sensor SHOT event will stop the same A/B recorders after the proven 2300 ms follow-through.
+  if(sensorPoseArm && v54RecordStarted)return;
 
   const now=performance.now();
   const present=v54Presence(l);
@@ -3936,27 +3994,14 @@ function sv113StartSide(side){
 }
 
 function sv113Ready(data){
-  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
+  // SENSOR READY is status/arming only.
+  // Actual A/B recording now starts from the SAME POSE ADDRESS point used by motion detection,
+  // so waiting at BALL READY is never included in the replay clip.
   if(!shouldUseSensorDetection())return;
   updateSV113StatusUI(true);
   try{setPoseHeaderState('SENSOR · BALL READY')}catch(e){}
   try{showReadyCenter(true)}catch(e){}
   try{playReadyBeep()}catch(e){}
-
-  const session=sv113NewABSession();
-
-  // Same JS turn / same sensor edge. Each side still records from its own camera stream.
-  const a=sv113StartSide('A');
-  const b=sv113StartSide('B');
-  if(a)session.expected.add('A'); else if(state.A)state.A._sensorBatchId=0;
-  if(b)session.expected.add('B'); else if(state.B)state.B._sensorBatchId=0;
-
-  SV113_RECORDING=session.expected.size>0;
-  if(session.expected.size===2){
-    try{toast('A/B 동시 녹화 시작')}catch(e){}
-  }else if(session.expected.size===1){
-    try{toast([...session.expected][0]+' 카메라만 녹화 시작')}catch(e){}
-  }
 }
 
 function sv113FinishSide(side){
@@ -4171,19 +4216,20 @@ function sv113EstimatedDistance(data){
   return {carry, total, estimated:true, source:'SENSOR-V113', timestamp:Date.now()};
 }
 function sv113Shot(data){
-  if(typeof svAutoCaptureEnabled==='function' && !svAutoCaptureEnabled())return;
+  // SENSOR confirms impact; recording start came from the motion detector's ADDRESS point.
+  // Keep the same 2300 ms follow-through as the proven motion-detection replay.
+  // Never block the SHOT stop/replay path with the AUTO button state.
   if(!shouldUseSensorDetection())return;
   try{showReadyCenter(false)}catch(e){}
   try{setPoseHeaderState('SENSOR · SHOT')}catch(e){}
   updateSV113StatusUI(false);
 
-  // Ball-flight presentation immediately on the sensor SHOT edge.
-  try{if(typeof addSimulation==='function')addSimulation()}catch(e){}
-  const estimate=sv113EstimatedDistance(data||{});
-  try{if(typeof receiveSV96Shot==='function')receiveSV96Shot(estimate)}catch(e){}
+  // D2 V1 owns all launch/distance presentation.
+  // Sensor V113 remains trigger-only: never inject estimated/fake carry or total into SV.
 
   if(SV113_STOP_TIMER)clearTimeout(SV113_STOP_TIMER);
   SV113_STOP_TIMER=setTimeout(()=>{
+    // Same post-impact stop delay as motion detection (2300 ms).
     // One shared stop edge for the two independent camera recorders.
     const session=SV113_AB_SESSION;
     if(session&&session.expected.has('A'))sv113FinishSide('A');
@@ -4204,9 +4250,15 @@ async function pollSV113(){
     const readySeq=Number(d.readySeq||0);
     const shotSeq=Number(d.shotSeq||0);
 
-    // Baseline on first successful poll so an old shot is never replayed.
+    // Baseline on first successful poll.
+    // Important: when SV is opened AFTER the sensor is already BALL READY,
+    // arm the cameras once immediately; otherwise the first real shot has no recorder to stop.
+    const firstSensorPoll=(SV113_LAST_READY_SEQ<0 || SV113_LAST_SHOT_SEQ<0);
     if(SV113_LAST_READY_SEQ<0)SV113_LAST_READY_SEQ=readySeq;
     if(SV113_LAST_SHOT_SEQ<0)SV113_LAST_SHOT_SEQ=shotSeq;
+    if(firstSensorPoll && !!d.ready && shouldUseSensorDetection()){
+      try{sv113Ready(d)}catch(e){console.warn('SENSOR initial READY status',e)}
+    }
 
     if(readySeq>SV113_LAST_READY_SEQ){
       SV113_LAST_READY_SEQ=readySeq;
@@ -5105,6 +5157,235 @@ document.addEventListener('click',function(e){
  e.preventDefault();e.stopImmediatePropagation();save(b.dataset.side);
 },true);
 })();
-</script>\n
+</script>
+
+
+<script>
+/* ===== D2 LOCAL LAUNCH CLIENT · 8766 · RESTART/SEQ RESET SAFE ===== */
+(()=>{
+const URL='http://127.0.0.1:8766/launch';
+let busy=false,raf=0,history=[];
+let baselineReady=false,lastSeq=null,lastStamp=null,lastKey='';
+const W=858,H=258,TEE={x:70,y:230},AIM={x:748,y:64};
+
+function n(v,d=0){v=Number(v);return Number.isFinite(v)?v:d}
+function finite(v){v=Number(v);return Number.isFinite(v)?v:null}
+function setText(id,text){const el=document.getElementById(id);if(el)el.textContent=text}
+function lr(v,digits=1){
+  v=n(v);
+  if(Math.abs(v)<0.05)return 'C';
+  return (v<0?'L':'R')+Math.abs(v).toFixed(digits);
+}
+function spinLR(v){
+  v=n(v);
+  if(Math.abs(v)<0.5)return '0';
+  return (v<0?'L':'R')+Math.abs(v).toFixed(0);
+}
+function shotKey(d){
+  const ts=finite(d.timestamp), seq=finite(d.seq);
+  if(ts!==null)return 'T:'+ts;
+  return 'S:'+String(seq===null?'':seq)+'|'+n(d.ballSpeed).toFixed(3)+'|'+n(d.launch).toFixed(3)+'|'+n(d.total).toFixed(3);
+}
+function project(pt,maxForward){
+  const p=Math.max(0,Math.min(1,n(pt.x)/Math.max(1,maxForward)));
+  const gx=TEE.x+(AIM.x-TEE.x)*p, gy=TEE.y+(AIM.y-TEE.y)*p;
+  const dx=AIM.x-TEE.x,dy=AIM.y-TEE.y,len=Math.hypot(dx,dy)||1;
+  const nx=-dy/len,ny=dx/len;
+  const lat=n(pt.y)*Math.max(.72,2.25-1.1*p);
+  const h=n(pt.z)*Math.max(.65,1.55-.55*p);
+  return {x:gx+nx*lat,y:gy+ny*lat-h,gx:gx+nx*lat,gy:gy+ny*lat,z:n(pt.z)};
+}
+function path2(ctx,pts,maxForward,alpha,width){
+  if(!pts.length)return;
+  const projected=pts.map(q=>project(q,maxForward));
+  ctx.save();
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='#ff7900';
+  ctx.shadowColor='rgba(255,105,0,.72)';
+  ctx.shadowBlur=3.5;
+  for(let i=1;i<projected.length;i++){
+    const p0=projected[i-1],p1=projected[i];
+    const f=i/Math.max(1,projected.length-1);
+    // perspective: slightly thicker/stronger near tee, finer in the distance
+    ctx.globalAlpha=Math.max(.34,alpha*(1-.28*f));
+    ctx.lineWidth=Math.max(.85,Math.min(1.75,(width||1.5)*(1-.42*f)));
+    ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.stroke();
+  }
+  ctx.restore();
+}
+function estimateSmash(result){
+  const bs=Math.max(0,n(result.ballSpeed));
+  const carry=Math.max(0,n(result.carry));
+  const total=Math.max(carry,n(result.total));
+  const launch=Math.max(0,n(result.launch));
+  const spin=Math.abs(n(result.backSpin));
+  if(bs<1)return null;
+
+  // Distance efficiency from the field-calibrated D2 result.
+  const metersPerMps=total/bs;
+  // Long/low-launch shots normally deliver higher impact efficiency;
+  // short/high-launch shots lower. Spin is only a small modifier because
+  // D2 raw spin is known to be less stable than speed/launch/distance.
+  let smash;
+  if(total<40){
+    smash=1.05 + Math.min(.20,total/200) - Math.max(0,launch-35)*.002;
+  }else if(total<100){
+    smash=1.16 + (total-40)/60*.12 - Math.max(0,launch-32)*.0015;
+  }else if(total<180){
+    smash=1.28 + (total-100)/80*.10 - Math.max(0,launch-25)*.001;
+  }else{
+    smash=1.38 + Math.min(.11,(total-180)/105*.11);
+  }
+  // Small efficiency correction from actual calibrated distance per ball-speed.
+  const ref=Math.max(.5, Math.min(4.5,metersPerMps));
+  smash += (ref-2.8)*.012;
+  if(spin>6500)smash-=Math.min(.025,(spin-6500)/80000);
+  return Math.max(1.00,Math.min(1.50,smash));
+}
+function renderMetrics(result){
+  const smash=estimateSmash(result);
+  setText('d2MetricSide',lr(result.side,1)+'m');
+  setText('d2MetricBall',n(result.ballSpeed).toFixed(1));
+  setText('d2MetricSmash',smash===null?'--':smash.toFixed(2));
+  setText('d2MetricCarry',n(result.carry).toFixed(1));
+  setText('d2MetricTotal',n(result.total).toFixed(1));
+  setText('d2MetricLaunch',n(result.launch).toFixed(1));
+  setText('d2MetricDirection',lr(result.direction,1));
+  setText('d2MetricBack',Math.abs(n(result.backSpin)).toFixed(0));
+  setText('d2MetricSideSpin',spinLR(result.sideSpin));
+}
+function render(result){
+  renderMetrics(result);
+
+  const apex=document.getElementById('d2Apex');
+  if(apex)apex.textContent=n(result.apex).toFixed(1)+' m';
+
+  try{
+    if(typeof receiveSV96Shot==='function'){
+      receiveSV96Shot({
+        carry:n(result.carry), total:n(result.total),
+        estimated:false, source:'D2-CAL', timestamp:finite(result.timestamp)||Date.now()
+      });
+    }
+  }catch(e){console.error('D2 shot panel update',e)}
+
+  const c=document.getElementById('d2FlightCanvas');
+  if(!c)return;
+  const ctx=c.getContext('2d');
+  const pts=Array.isArray(result.trajectory)?result.trajectory:[];
+  if(!pts.length)return;
+
+  const maxForward=Math.max(300,n(result.total),n(result.carry));
+  if(raf)cancelAnimationFrame(raf);
+  const old=history.slice(-5);
+  const start=performance.now();
+  const trajEndT=Math.max(n(result.flightTime), n(pts[pts.length-1]&&pts[pts.length-1].t));
+  // Near real-time playback so the moving ball is clearly visible during coaching.
+  const duration=Math.max(2400,Math.min(6500,trajEndT*1000));
+
+  function frame(now){
+    ctx.clearRect(0,0,W,H);
+    const fades=[.18,.23,.30,.40,.52];
+    old.forEach((h,i)=>path2(ctx,h.pts,h.maxForward,fades[Math.max(0,5-old.length+i)]*.55,1.05));
+
+    const f=Math.max(0,Math.min(1,(now-start)/duration));
+    const simT=trajEndT*f;
+    let count=2;
+    for(let i=1;i<pts.length;i++){
+      if(n(pts[i].t)<=simT)count=i+1;
+      else break;
+    }
+    count=Math.max(2,Math.min(pts.length,count));
+    const live=pts.slice(0,count);
+    path2(ctx,live,maxForward,1,1.55);
+
+    const q=live[live.length-1],p=project(q,maxForward);
+    const alt=Math.max(0,p.z),a=Math.max(.12,.58-alt/70),r=Math.max(2.0,5.0-alt/28);
+
+    ctx.save();ctx.globalAlpha=a;ctx.fillStyle='#000';ctx.filter=`blur(${Math.min(4,alt/12)}px)`;
+    ctx.beginPath();ctx.ellipse(p.gx,p.gy,r*1.6,r,0,0,Math.PI*2);ctx.fill();ctx.restore();
+
+    ctx.save();ctx.fillStyle='#fff7ea';ctx.shadowColor='rgba(255,122,0,.95)';ctx.shadowBlur=9;
+    ctx.beginPath();ctx.arc(p.x,p.y,5.2,0,Math.PI*2);ctx.fill();ctx.restore();
+
+    if(f<1)raf=requestAnimationFrame(frame);
+    else{
+      history.push({pts,maxForward});
+      if(history.length>5)history.shift();
+    }
+  }
+  raf=requestAnimationFrame(frame);
+  window.SV_D2_LAST_AT=Date.now();
+}
+async function poll(){
+  if(busy)return;
+  busy=true;
+  try{
+    const r=await fetch(URL+'?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    window.SV_D2_CONNECTED=true;
+
+    const seq=finite(d.seq), stamp=finite(d.timestamp), key=shotKey(d);
+
+    // First successful read is only a baseline: never display an old stored shot as a new shot.
+    if(!baselineReady){
+      baselineReady=true;
+      lastSeq=seq; lastStamp=stamp; lastKey=key;
+      return;
+    }
+
+    // Timestamp is authoritative. This survives D2 engine restart where seq resets to 1.
+    let isNew=false;
+    if(stamp!==null && lastStamp!==null){
+      isNew=stamp>lastStamp;
+    }else if(stamp!==null && lastStamp===null){
+      isNew=key!==lastKey;
+    }else if(seq!==null && lastSeq!==null){
+      isNew=(seq!==lastSeq && key!==lastKey);
+    }else{
+      isNew=key!==lastKey;
+    }
+
+    if(isNew){
+      lastSeq=seq; lastStamp=stamp; lastKey=key;
+      render(d);
+    }else{
+      // Keep baseline synchronized even when engine was restarted and seq rolled back.
+      if(stamp!==null && (lastStamp===null || stamp>=lastStamp))lastStamp=stamp;
+      lastSeq=seq; lastKey=key;
+    }
+  }catch(e){
+    window.SV_D2_CONNECTED=false;
+  }finally{
+    busy=false;
+  }
+}
+setInterval(poll,100);
+setTimeout(poll,250);
+})();
+
+async function svSensorForceReplay(){
+  const candidates=[
+    document.getElementById('videoA'),document.getElementById('videoB'),
+    document.getElementById('camA'),document.getElementById('camB')
+  ].filter(Boolean);
+  await Promise.all(candidates.map(v=>new Promise(resolve=>{
+    if(v.readyState>=2)return resolve();
+    const done=()=>resolve();
+    v.addEventListener('loadeddata',done,{once:true});
+    v.addEventListener('canplay',done,{once:true});
+    setTimeout(done,1200);
+  })));
+  try{
+    if(typeof playBothVideos==='function'){playBothVideos();return}
+  }catch(e){}
+  for(const v of candidates){
+    try{v.currentTime=0}catch(e){}
+    try{await v.play()}catch(e){}
+  }
+}
+</script>
+
 </body>
 </html>
