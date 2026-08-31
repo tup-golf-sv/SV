@@ -3906,9 +3906,11 @@ const SV113_IS_PREVIEW=(()=>{
   const isRealSVHost=(host==='tup-golf-sv.github.io');
   const isDirectLocalFile=(protocol==='file:');
   const isExplicitLocalHost=(host==='localhost' || host==='127.0.0.1');
-  const isChatGPT=host==='chatgpt.com' || host.endsWith('.chatgpt.com') || referrer.includes('chatgpt.com');
+  const isChatGPTCurrentHost=host==='chatgpt.com' || host.endsWith('.chatgpt.com');
   const isSandboxLike=protocol==='blob:' || protocol==='data:' || (!host && protocol!=='file:');
-  return isChatGPT || isSandboxLike || !(isRealSVHost || isDirectLocalFile || isExplicitLocalHost);
+  // IMPORTANT: a real GitHub SV page must stay enabled even when it was opened
+  // from a ChatGPT link. Only the CURRENT page host/protocol decides preview mode.
+  return isChatGPTCurrentHost || isSandboxLike || !(isRealSVHost || isDirectLocalFile || isExplicitLocalHost);
 })();
 let SV_DETECT_MODE=localStorage.getItem('SV_DETECT_MODE')||'AUTO';
 let BALL_SENSOR_CONNECTED=false;
@@ -4242,7 +4244,7 @@ async function pollSV113(){
   if(SV113_POLL_BUSY)return;
   SV113_POLL_BUSY=true;
   try{
-    const r=await fetch(SV113_STATUS_URL,{cache:'no-store'});
+    const r=await fetch(SV113_STATUS_URL,{cache:'no-store',mode:'cors',targetAddressSpace:'local'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const d=await r.json();
     BALL_SENSOR_CONNECTED=!!(d.bridge&&d.connected);
@@ -4274,6 +4276,10 @@ async function pollSV113(){
   }catch(e){
     BALL_SENSOR_CONNECTED=false;
     updateSV113StatusUI(false);
+    if(!window.__SV113_LAST_FETCH_ERR || Date.now()-window.__SV113_LAST_FETCH_ERR>3000){
+      window.__SV113_LAST_FETCH_ERR=Date.now();
+      console.warn('[SV 8765 FETCH]',e);
+    }
   }finally{
     SV113_POLL_BUSY=false;
   }
@@ -5321,7 +5327,7 @@ async function poll(){
   if(busy)return;
   busy=true;
   try{
-    const r=await fetch(URL+'?t='+Date.now(),{cache:'no-store'});
+    const r=await fetch(URL+'?t='+Date.now(),{cache:'no-store',mode:'cors',targetAddressSpace:'local'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const d=await r.json();
     window.SV_D2_CONNECTED=true;
@@ -5357,6 +5363,10 @@ async function poll(){
     }
   }catch(e){
     window.SV_D2_CONNECTED=false;
+    if(!window.__SVD2_LAST_FETCH_ERR || Date.now()-window.__SVD2_LAST_FETCH_ERR>3000){
+      window.__SVD2_LAST_FETCH_ERR=Date.now();
+      console.warn('[SV 8766 FETCH]',e);
+    }
   }finally{
     busy=false;
   }
